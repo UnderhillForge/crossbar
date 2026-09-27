@@ -8,7 +8,6 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
-packs/orientation/flags.env
 packs/big-evil/SECRETS.md
 data/bec-state.json
 data/users/

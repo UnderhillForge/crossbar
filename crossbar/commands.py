@@ -36,7 +36,6 @@ from crossbar.lobby import (
     pad_hosts_text,
     pad_map_text,
 )
-from crossbar import orientation
 from crossbar import site
 from crossbar.packs import PACKS, get_pack, hosts_listing
 from crossbar.session import Session, live_sessions, prompt_for, valid_name
@@ -324,8 +323,6 @@ def _return_host(sess: Session) -> str:
 
 def cmd_bye(sess: Session, args: list[str]) -> str:
     pack = get_pack(sess.host)
-    if pack.name == "orientation":
-        return orientation.leave(sess)
     if pack.name in {"bec", "bec-mf"}:
         return v7.hangup(sess)
     if pack.name == "grayline":
@@ -673,9 +670,7 @@ def submit(sess: Session) -> str:
     parts = stripped.split()
     cmd, args = parts[0].lower(), parts[1:]
     pack = get_pack(sess.host)
-    if pack.name == "orientation":
-        body = orientation.dispatch(sess, cmd, args)
-    elif cmd == sess.host:
+    if cmd == sess.host:
         body = cmd_already(sess, args)
     else:
         handler = COMMANDS.get(cmd)

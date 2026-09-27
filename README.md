@@ -1,8 +1,8 @@
 # Crossbar
 
-Crossbar is the terminal switchboard for GRAYLINE. The public face is [grayline.dev](https://grayline.dev): one full-screen terminal, a login prompt, and a private session per browser.
+Crossbar 0.2.0 is the terminal switchboard for GRAYLINE. The public face is [grayline.dev](https://grayline.dev): one full-screen terminal and a private session per browser.
 
-This repo is the app. It runs on the VPS behind the existing nginx. TLS stays on nginx.
+This repo is the app. It runs on the VPS behind the existing nginx. TLS stays on nginx. The in-world machine is GRAYLINE. The lobby has no year. A door's period starts after `CONNECT`.
 
 ## Local run
 
@@ -23,44 +23,98 @@ Open http://127.0.0.1:8080 . The process listens on `127.0.0.1:8080` only.
 CROSSBAR_SECRET=replace-with-a-long-random-string
 ```
 
-## Login
+Two more variables are read by the server when a logged-in account uses `claim` or `chain`. The browser never opens this socket. Leave the key unset in development; Crossbar will say the awards key is not set and will not mark a claim.
 
-The terminal plays a short carrier sequence, then an ASCII banner, then `login:`. Any key after `CONNECT` skips the rest of the boot. Left alone, the sequence finishes in under 3 seconds.
+```
+PISECURE_RPC_URL=ws://127.0.0.1:3144
+PISECURE_AWARDS_KEY=
+```
 
-At `login:`:
+`PISECURE_RPC_URL` defaults to `ws://127.0.0.1:3144`. `PISECURE_AWARDS_KEY` is a 64-character hex Ed25519 seed. It stays in the environment. Do not commit it, and do not store a player's spending key. A player account stores one `ps1` address.
 
-- `guest` is ephemeral. It has no row in the database.
-- a handle asks for that account's password
-- `new` asks for a handle, a password, the password again, and an email
+## Logon
 
-The glass opens at `LOGON:`. Guest or a blank line is `GUEST ACCEPTED`. A known account is `IDENTITY <handle>`. The lobby prompt is `GL>`. Passwords are stored with stdlib scrypt. Nothing sends email. `verify` replies `verification is dark`. New accounts get status `ok`.
+First paint:
 
-These handles cannot register or log in: `sysop`, `admin`, `root`, `operator`, `postmaster`, `grayline`, `crossbar`. `finger sysop` and `finger admin` say they are not accepting mail. Those two names have no working password. `guest`, `new`, and `login` are prompt words, not accounts.
+```
+CONNECTED  T1    DTE 03    NODE GL-01
 
-After logon the prompt is `GL>`. `CONNECT BEC` leaves the pad for the V7 door. `CONNECT TA` is `NO CARRIER`.
+GREYLINE PUBLIC DATA NETWORK
+PAD READY
+
+LOGON:
+```
+
+At `LOGON:`:
+
+- a blank line or `guest` prints the reverse-video header, `GUEST ACCEPTED`, `CIRCUIT OPEN`, and `GL>`. Guest has no database row.
+- a known handle asks `PASSWORD:`. A match prints the header, `IDENTITY <handle>`, `CIRCUIT OPEN`, and `GL>`. A bad password is `IDENTIFICATION NOT RECOGNIZED` and the prompt stays at `LOGON:`.
+- `new` asks for a handle, a password, the password again, and an email. Passwords are at least 4 characters and are stored with stdlib scrypt. Nothing sends email. `verify` replies `verification is dark`. New accounts get status `ok`.
+
+These handles cannot register or log in: `sysop`, `admin`, `root`, `operator`, `postmaster`, `grayline`, `crossbar`. `finger sysop` and `finger admin` say they are not accepting mail. `guest`, `new`, and `login` are prompt words, not accounts.
+
+The operator console can close guest logon or registration. Closed guest is `logon closed`. Closed registration is `registration is closed`.
+
+The lobby prompt is always `GL>`. Tab at `GL>` completes pad commands and host names. An unknown command prints `not found`.
+
+## Circuits
+
+`HOSTS` on the pad:
+
+```
+NAME     TITLE                              BAUD   STATE
+BEC      ORIENTATION  •  BEC OUTSIDE PLANT      1200   UP
+TA       TERMINAL ADDICTION                     2400   OFFLINE
+TYMNET   CARRIER HOP                            T1     UP
+```
+
+There is no host named orientation. `CONNECT BEC` (alias `big-evil`) prints `DIALING 1200...` and enters the UNIX V7 door. The shell prompt there is `bec$` or `bec#`. `logout` or `bye` from that door returns to `GL>` at T1. `CONNECT TA` or `terminal-addiction` prints `DIALING 2400...` and `NO CARRIER` and leaves the session on the pad. `CONNECT TYMNET` is the carrier hop. `bye` or `g` there returns to the pad. `office-314` is on the Tymnet directory and is dark.
+
+Greyline is T1 (1,544,000). A hop takes the lower of the current rate and the next host's ceiling, and the rate stays down until the path is Greyline alone. Output pacing happens on the WebSocket write. `MAP` and `HOSTS /T` draw the same three-gate tree. `FULL` is the pad, identity, and gates panes plus `NEWS UNAVAILABLE`. `NEWS` stays `NEWS UNAVAILABLE` until NNTP is wired. `DATE` is the real clock. `STATUS` is node, identity, destination, and baud. `FINGER` is identity, destination, and a grant count.
+
+`?` lists the pad commands. The operator console can replace that text and the MOTD without a deploy. Host state (`UP`, `OFFLINE`, `MAINT`) is the same kind of override, in `data/site/runtime.json`.
+
+## Profile and claims
+
+These three commands exist only at `GL>`, and only for a real account. Guest gets `logon required`.
+
+| Command | What it does |
+| --- | --- |
+| `profile_config` | Menu for this account. The handle is fixed. `1` changes email, `2` changes the password, `3` links one `ps1`. A short name is resolved with `namelookup`. The same `ps1` cannot sit on two accounts. If the node answers `listunspent`, the menu shows that balance. |
+| `claim FLAG_ID` | Claims that flag for the linked `ps1`. With no link: `link a wallet first: ps1 link can be found in profile_config`. If `listflags` for that address already includes the flag: `already yours`. Otherwise the server submits `claimflag`, signed by the awards key, with `flag_id` and that `ps1`. The doorway answer stays in Crossbar. Acceptance replies `claimed` and stores the flag id, `ps1`, and txid on the account. |
+| `chain` | Calls `getchaininfo` and prints height, tip hash, difficulty, and circulating supply. |
+
+Node replies that Crossbar prints as one line: `unknown flag`, `already claimed`, `flag exhausted`, `flag expired`, `unlimited flag cannot pay`. A missing flag method is `flags are not on this node yet`, and the account is not marked claimed. A missing `getchaininfo` is `getchaininfo is not on this node yet`. `createflag` is not a lobby command.
 
 ## Refresh
 
 `GET /` stores a session id in a signed HttpOnly cookie named `crossbar`. The cookie is valid on local HTTP, so `http://127.0.0.1:8080` works without TLS. The page opens a WebSocket to `/ws`, and the server looks up that id.
 
-Reload joins the same `Session` when the process still has it and it has been idle for less than 6 hours. A logged-in terminal prints:
+Reload joins the same `Session` when the process still has it and it has been idle for less than 6 hours. A logged-in pad reprints the reverse-video header and `GL>`. A session that is still inside a hop prints `resumed name@host` and that hop's prompt.
 
-```
-resumed name@host
-name@host>
-```
+`logout` and `exit` clear the name and print `LOGON:` again. The cookie and the session id stay.
 
-`logout` and `exit` clear the name and print the login banner again. The cookie and the session id stay.
-
-Browser Back stays on `/`. Backspace deletes the last character of the line being typed and the server echoes `\b \b`.
+Browser Back stays on `/`. Backspace deletes the last character of the line being typed and the server echoes `\b \b`. Password entry, including the password lines inside `profile_config`, is not echoed.
 
 ## Persistence
 
-A `Session` holds the sid, user, host, line buffer, command history, and last activity, in process memory. A restart clears sessions. The next visit still sends the cookie, finds no session, and shows the boot sequence again. Idle sessions are dropped after 6 hours.
+A `Session` holds the sid, user, host, line buffer, command history, and last activity, in process memory. A restart clears sessions. The next visit still sends the cookie, finds no session, and shows the logon paint again. Idle sessions are dropped after 6 hours.
 
-Accounts are rows in `data/grayline.db`: handle, password hash, email, created, last login, and status. `CROSSBAR_SECRET` still only signs the cookie. Set `CROSSBAR_DB` to point at a different file.
+Accounts are rows in `data/grayline.db`: handle, password hash, email, created, last login, status, must-change, note, and wallet. Accepted flag claims are rows in `flag_claims` (handle, flag id, `ps1`, txid, time). `CROSSBAR_SECRET` still only signs the cookie. Set `CROSSBAR_DB` to point at a different file.
 
-To wipe users, stop Crossbar and delete `data/grayline.db`. The next start creates an empty database. Guest sessions are not in that file.
+To wipe users, stop Crossbar and delete `data/grayline.db`. The next start creates an empty database. Guest sessions are not in that file. `data/*.db`, `data/users/`, `data/site/`, and `data/admin-audit.log` are gitignored.
+
+Registered play on the V7 door is an overlay under `data/users/<handle>/bec/`. Guest edits live on the session and are dropped on hangup. The gold tree under `packs/big-evil/tree/` is not written at runtime.
+
+## Operator console
+
+The public pad does not link to the console. Bind and first-time setup are in [docs/ADMIN.md](docs/ADMIN.md).
+
+```bash
+python -m crossbar --admin
+```
+
+That process listens on `127.0.0.1:8081`. Do not publish that port. Operator accounts are separate from Greyline handles and live in `data/admin.db`.
 
 ## nginx
 
@@ -94,28 +148,10 @@ WebSocket upgrade headers are required. `proxy_read_timeout` is 6 hours so a qui
 
 [`deploy/crossbar.service`](deploy/crossbar.service) is an example unit: `User=crossbar`, `WorkingDirectory=/opt/crossbar`, `ExecStart` runs uvicorn on `127.0.0.1:8080`, `Restart=always`. Installing it on the VPS is a later step. Adjust the paths to match where the checkout and the virtualenv actually live.
 
-## Commands
-
-| Command | What it does |
-| --- | --- |
-| `help`, `?` | the short list |
-| `ls`, `dir` | lobby entries: `motd`, `hosts`, `mail` |
-| `who` | names of other live sessions |
-| `motd` | message of the day |
-| `finger [name]`, `whois` | a live session (you, when the name is omitted) |
-| `hosts`, `host` | grayline's directory: grayline, tymnet, terminal-addiction |
-| `mail` | `no letters.` |
-| `verify` | `verification is dark` |
-| `connect <host>` | joins an in-process pack and changes the prompt |
-| `login` | you are already in; `logout` leaves |
-| `logout`, `exit` | back to the login banner, same sid |
-
-`connect` does not open a TCP connection. Grayline is the default pack. `connect tymnet` puts you on the Tymnet pad (`name@tymnet>`). Its `hosts` list is grayline, terminal-addiction, and office-314. office-314 is dark. `connect terminal-addiction` from grayline or tymnet opens a short Renegade menu with no messages yet. `bye` or `g` on that board returns to the previous host, or to grayline. On tymnet, `bye` and `g` return to grayline.
-
-From Terminal Addiction, `d` opens Doors and `1` dials `bec`, a simulated UNIX V7 box at 1200 baud. The prompt is a shell (`bec$` or `bec#`), not the orientation booth. Baud only drops as you leave Greyline and returns to T1 when the path is home again. `packs/orientation/` is still in the tree and is not door 1. The annex under `packs/orientation-target/` is unchanged and is not started for this hop. An unknown command prints `not found`.
-
 ## Tests
 
 ```bash
-python -m unittest tests/test_app.py
+python -m unittest tests.test_app tests.test_admin tests.test_claim
 ```
+
+`tests.test_claim` talks to a node only when `PISECURE_RPC_URL` accepts a connection. Otherwise it checks the lobby parser: missing link, already yours, and a refused call. It does not invent an accepted claim.

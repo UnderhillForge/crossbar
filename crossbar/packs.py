@@ -130,28 +130,6 @@ PACKS: dict[str, Pack] = {
         baud_max=2400,
         era="1994-bbs",
     ),
-    "orientation": Pack(
-        name="orientation",
-        up=True,
-        commands=frozenset(
-            {
-                "help",
-                "news",
-                "quest",
-                "score",
-                "look",
-                "go",
-                "talk",
-                "inventory",
-                "submit",
-                "bye",
-            }
-        ),
-        hosts=(HostRef("orientation", True),),
-        banner="",
-        here_line="Floor 0. The jacket still does not fit.",
-        baud_max=2400,
-    ),
     "bec": Pack(
         name="bec",
         up=True,

@@ -124,8 +124,6 @@ def prompt_for(sess: Session) -> str:
         if sess.host in {"", "grayline"}:
             return "LOGON: "
         return "login: "
-    if sess.host == "orientation":
-        return "crawler@orientation> "
     if sess.host == "grayline":
         return "GL> "
     return f"{sess.user}@{sess.host}> "
