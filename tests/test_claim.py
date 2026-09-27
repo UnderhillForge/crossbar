@@ -499,6 +499,29 @@ class ClaimTests(unittest.TestCase):
             chainrpc.call_at = at_orig
         self.assertEqual(found, ps1)
 
+    def test_short_name_is_kept_when_no_node_answers(self) -> None:
+        from crossbar.ws import push
+
+        sess = _sess("alias")
+        sess.phase = "shell"
+
+        def rpc(method, params):
+            raise chainrpc.RpcDown("closed")
+
+        original = chainrpc.call
+        http = chainrpc._http_json
+        chainrpc.call = rpc
+        chainrpc._http_json = lambda path: None
+        try:
+            push(sess, "profile_config\r")
+            saved = push(sess, "alice\r")
+        finally:
+            chainrpc.call = original
+            chainrpc._http_json = http
+        self.assertIn("name saved", saved)
+        self.assertIn("PS1     alice", saved)
+        self.assertEqual(wallet_of("alias"), "alice")
+
     def test_leaders_and_user_list(self) -> None:
         import tempfile
 

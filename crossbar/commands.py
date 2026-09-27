@@ -460,7 +460,7 @@ def cmd_connect(sess: Session, args: list[str]) -> str:
 
 def _profile_menu(sess: Session) -> str:
     handle = sess.user or ""
-    ps1 = wallet_of(handle) or "none"
+    ps1 = resolve_wallet(handle) or wallet_of(handle) or "none"
     lines = [
         "PROFILE",
         f"HANDLE  {handle}",
@@ -566,6 +566,46 @@ def _save_email(sess: Session, email: str) -> str:
     return "email saved\r\n" + _profile_menu(sess)
 
 
+def _remember_wallet(sess: Session, value: str) -> str:
+    """Store a ps1, or a short name when no node can resolve it yet."""
+    handle = sess.user or ""
+    named = not chainrpc.normalize_ps1(value)
+    owner = wallet_owner(value)
+    if owner and owner != handle:
+        sess.phase = "profile"
+        return "ps1 already linked\r\n"
+    try:
+        set_account_fields(handle, wallet=value)
+    except sqlite3.IntegrityError:
+        sess.phase = "profile"
+        return "ps1 already linked\r\n"
+    sess.phase = "profile"
+    if named:
+        return "name saved\r\n"
+    return "ps1 saved\r\n"
+
+
+def resolve_wallet(handle: str) -> str:
+    """Turn a stored short name into its ps1 when a node answers."""
+    current = wallet_of(handle)
+    if not current or chainrpc.normalize_ps1(current):
+        return current
+    try:
+        found = chainrpc.lookup_name(current)
+    except (chainrpc.MethodMissing, chainrpc.RpcDown):
+        return current
+    if not found:
+        return current
+    owner = wallet_owner(found)
+    if owner and owner != handle:
+        return current
+    try:
+        set_account_fields(handle, wallet=found)
+    except sqlite3.IntegrityError:
+        return current
+    return found
+
+
 def _link_ps1(sess: Session, text: str) -> str:
     handle = sess.user or ""
     ps1 = chainrpc.normalize_ps1(text)
@@ -576,6 +616,8 @@ def _link_ps1(sess: Session, text: str) -> str:
             sess.phase = "profile"
             return "name lookup is not on this node yet\r\n"
         except chainrpc.RpcDown:
+            if chainrpc.valid_shortname(text):
+                return _remember_wallet(sess, text.strip())
             sess.phase = "profile"
             return "not saved: node did not answer\r\n"
     if not ps1:
@@ -585,13 +627,7 @@ def _link_ps1(sess: Session, text: str) -> str:
     if owner and owner != handle:
         sess.phase = "profile"
         return "ps1 already linked\r\n"
-    try:
-        set_account_fields(handle, wallet=ps1)
-    except sqlite3.IntegrityError:
-        sess.phase = "profile"
-        return "ps1 already linked\r\n"
-    sess.phase = "profile"
-    return "ps1 saved\r\n"
+    return _remember_wallet(sess, ps1)
 
 
 def perform_claim(sess: Session, flag_id: str) -> str:
@@ -601,9 +637,11 @@ def perform_claim(sess: Session, flag_id: str) -> str:
     flag_id = flag_id.strip()
     if not flag_id:
         return "claim: usage: claim FLAG_ID\r\n"
-    ps1 = wallet_of(sess.user)
+    ps1 = resolve_wallet(sess.user) or wallet_of(sess.user)
     if not ps1:
         return "link a wallet first: ps1 link can be found in profile_config\r\n"
+    if not chainrpc.normalize_ps1(ps1):
+        return "node did not answer\r\n"
     if claim_recorded(sess.user, flag_id):
         return "already yours\r\n"
     line, txid = chainrpc.claim_flag(flag_id, ps1)
