@@ -1,0 +1,6 @@
+Hank, 24 Sep 1985
+
+The mainframe is bec-mf.
+From a root shell: cu /dev/ttyh0 bec-mf
+Payroll is over there. This note is not the payroll.
+The root password is not in this file.

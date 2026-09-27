@@ -1,0 +1,32 @@
+id: orientation
+prompt: crawler@orientation>
+start: stairwell
+return_to: terminal-addiction
+locked:
+  - superintendent-office
+aliases:
+  office: superintendent-office
+  arena: tutorial-arena
+  stairs: stairwell
+  machine: vending
+rooms:
+  stairwell:
+    title: Stairwell
+    copy: room-stairwell.txt
+    exits: [kiosk, vending, tutorial-arena, superintendent-office]
+  kiosk:
+    title: Safety kiosk
+    copy: room-kiosk.txt
+    exits: [stairwell, vending, tutorial-arena]
+  vending:
+    title: Vending
+    copy: room-vending.txt
+    exits: [stairwell, kiosk]
+  superintendent-office:
+    title: Superintendent's office
+    copy: room-superintendent-office.txt
+    exits: [stairwell]
+  tutorial-arena:
+    title: Tutorial arena
+    copy: room-tutorial-arena.txt
+    exits: [stairwell, kiosk]

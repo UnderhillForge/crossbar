@@ -1,0 +1,76 @@
+bec:
+  /: {mode: "755", uid: 0, gid: 0, dir: true}
+  /bin: {mode: "755", uid: 2, gid: 2, dir: true, mtime: "Jan 12  1986"}
+  /etc: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Nov 12  1993"}
+  /etc/motd: {mode: "644", uid: 0, gid: 0, file: etc/motd}
+  /etc/passwd: {mode: "644", uid: 0, gid: 0, file: etc/passwd}
+  /etc/group: {mode: "644", uid: 0, gid: 0, file: etc/group}
+  /etc/hostname: {mode: "644", uid: 0, gid: 0, file: etc/hostname}
+  /etc/ttys: {mode: "644", uid: 0, gid: 0, file: etc/ttys, mtime: "Sep 25  1985"}
+  /etc/rc: {mode: "644", uid: 0, gid: 0, file: etc/rc, mtime: "Nov 12  1993"}
+  /tmp: {mode: "1777", uid: 0, gid: 0, dir: true, mtime: "Nov  8  1993"}
+  /tmp/junk: {mode: "644", uid: 2, gid: 2, file: tmp/junk}
+  /usr: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Nov 12  1993"}
+  /usr/adm: {mode: "755", uid: 3, gid: 3, dir: true}
+  /usr/adm/messages: {mode: "644", uid: 3, gid: 3, file: usr/adm/messages}
+  /usr/guest: {mode: "755", uid: 999, gid: 9, dir: true}
+  /usr/guest/.profile: {mode: "644", uid: 999, gid: 9, file: usr/guest/.profile}
+  /usr/games: {mode: "755", uid: 3, gid: 3, dir: true}
+  /usr/games/fortune: {mode: "640", uid: 3, gid: 3, file: usr/games/fortune}
+  /usr/mail: {mode: "755", uid: 0, gid: 0, dir: true}
+  /usr/mail/guest: {mode: "600", uid: 999, gid: 9, file: usr/mail/guest}
+  /usr/man: {mode: "755", uid: 2, gid: 2, dir: true}
+  /usr/man/man1: {mode: "755", uid: 2, gid: 2, dir: true}
+  /usr/man/man1/ls.1: {mode: "644", uid: 2, gid: 2, file: usr/man/man1/ls.1}
+  /usr/man/man1/cat.1: {mode: "644", uid: 2, gid: 2, file: usr/man/man1/cat.1}
+  /usr/man/man1/whoami.1: {mode: "644", uid: 2, gid: 2, file: usr/man/man1/whoami.1}
+  /usr/man/man1/passwd.1: {mode: "644", uid: 2, gid: 2, file: usr/man/man1/passwd.1}
+  /usr/man/man1/su.1: {mode: "644", uid: 2, gid: 2, file: usr/man/man1/su.1}
+  /usr/man/man1/chmod.1: {mode: "644", uid: 2, gid: 2, file: usr/man/man1/chmod.1}
+  /usr/sys: {mode: "750", uid: 3, gid: 3, dir: true}
+  /usr/sys/mf.note: {mode: "640", uid: 3, gid: 3, file: usr/sys/mf.note}
+  /.rhosts: {mode: "600", uid: 0, gid: 0, file: .rhosts, mtime: "Nov 12  1993"}
+  /README.BEC: {mode: "644", uid: 0, gid: 0, file: README.BEC, mtime: "Sep 25  1985"}
+  /usr/hank: {mode: "755", uid: 200, gid: 3, dir: true, mtime: "Nov 12  1993"}
+  /usr/hank/.profile: {mode: "644", uid: 200, gid: 3, file: usr/hank/.profile, mtime: "Mar 14  1990"}
+  /usr/hank/todo: {mode: "644", uid: 200, gid: 3, file: usr/hank/todo, mtime: "Nov 12  1993"}
+  /usr/hank/cu.log: {mode: "644", uid: 200, gid: 3, file: usr/hank/cu.log, mtime: "Nov 12  1993"}
+  /usr/hank/letter: {mode: "644", uid: 200, gid: 3, file: usr/hank/letter, mtime: "Nov 10  1993"}
+  /usr/hank/mf.howto: {mode: "640", uid: 200, gid: 3, file: usr/hank/mf.howto, mtime: "Mar 14  1990"}
+  /usr/hank/pico.txt: {mode: "644", uid: 200, gid: 3, file: usr/hank/pico.txt, mtime: "Mar 14  1990"}
+  /usr/pat: {mode: "755", uid: 201, gid: 201, dir: true, mtime: "Feb  8  1991"}
+  /usr/pat/.profile: {mode: "644", uid: 201, gid: 201, file: usr/pat/.profile, mtime: "Feb  8  1991"}
+  /usr/pat/budget.89: {mode: "644", uid: 201, gid: 201, file: usr/pat/budget.89, mtime: "Dec 20  1989"}
+  /usr/pat/budget.90: {mode: "644", uid: 201, gid: 201, file: usr/pat/budget.90, mtime: "Dec 18  1990"}
+  /usr/pat/budget.91: {mode: "644", uid: 201, gid: 201, file: usr/pat/budget.91, mtime: "Feb  8  1991"}
+  /usr/pat/poker: {mode: "644", uid: 201, gid: 201, file: usr/pat/poker, mtime: "Nov 12  1993"}
+  /usr/spool: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Nov 12  1993"}
+  /usr/spool/mail: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Nov 12  1993"}
+  /usr/spool/mail/hank: {mode: "644", uid: 200, gid: 3, file: usr/spool/mail/hank, mtime: "Nov 12  1993"}
+  /usr/spool/uucp: {mode: "755", uid: 1, gid: 1, dir: true, mtime: "Nov 12  1993"}
+  /usr/spool/uucp/L.sys: {mode: "644", uid: 1, gid: 1, file: usr/spool/uucp/L.sys, mtime: "Nov 12  1993"}
+  /usr/adm/lastlog: {mode: "644", uid: 3, gid: 3, file: usr/adm/lastlog, mtime: "Nov 12  1993"}
+  /usr/adm/wtmp.txt: {mode: "644", uid: 3, gid: 3, file: usr/adm/wtmp.txt, mtime: "Nov 12  1993"}
+  /usr/games/rogue: {mode: "644", uid: 3, gid: 3, file: usr/games/rogue, mtime: "Jun  2  1991"}
+  /usr/games/wump: {mode: "644", uid: 3, gid: 3, file: usr/games/wump, mtime: "Sep 25  1986"}
+  /usr/games/fortune: {mode: "640", uid: 3, gid: 3, file: usr/games/fortune, mtime: "Nov 12  1993"}
+  /tmp/Ex28611: {mode: "644", uid: 200, gid: 3, file: tmp/Ex28611, mtime: "Nov  8  1993"}
+  /tmp/vi.swp: {mode: "644", uid: 200, gid: 3, file: tmp/vi.swp, mtime: "Nov  7  1993"}
+  /tmp/core: {mode: "644", uid: 2, gid: 2, file: tmp/core, mtime: "Nov  8  1993"}
+  /tmp/lpr.log: {mode: "644", uid: 1, gid: 1, file: tmp/lpr.log, mtime: "Nov 12  1993"}
+  /tmp/junk: {mode: "644", uid: 2, gid: 2, file: tmp/junk, mtime: "Nov  8  1993"}
+  /usr/local: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Mar 14  1990"}
+  /usr/local/bin: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Mar 14  1990"}
+  /usr/local/man: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Mar 14  1990"}
+  /usr/local/man/man1: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Mar 14  1990"}
+  /usr/local/man/man1/pico.1: {mode: "644", uid: 0, gid: 0, file: usr/local/man/man1/pico.1, mtime: "Mar 14  1990"}
+  /usr/news: {mode: "755", uid: 0, gid: 0, dir: true, mtime: "Nov 12  1993"}
+  /usr/news/cutover: {mode: "644", uid: 0, gid: 0, file: usr/news/cutover, mtime: "Nov 12  1993"}
+  /etc/motd: {mode: "644", uid: 0, gid: 0, file: etc/motd, mtime: "Nov 12  1993"}
+mf:
+  /: {mode: "755", uid: 0, gid: 0, dir: true}
+  /usr: {mode: "755", uid: 0, gid: 0, dir: true}
+  /usr/payroll: {mode: "755", uid: 0, gid: 0, dir: true}
+  /usr/payroll/memo: {mode: "644", uid: 0, gid: 0, file: usr/payroll/memo}
+  /etc: {mode: "755", uid: 0, gid: 0, dir: true}
+  /etc/hostname: {mode: "644", uid: 0, gid: 0, file: etc/hostname}

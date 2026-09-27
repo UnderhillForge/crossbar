@@ -1,0 +1,3 @@
+bec-mf root
+# payroll is on the mainframe
+# cu /dev/ttyh0 bec-mf

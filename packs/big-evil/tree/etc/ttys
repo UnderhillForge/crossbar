@@ -1,0 +1,5 @@
+# Big Evil dialup, 25 Sep 1985
+# 14tty02 is the outside 1200 baud rotary. Leave it up.
+12console
+14tty02
+02ttyh0

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>GRAYLINE</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #0a0a0a;
+    color-scheme: dark;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  #term {
+    position: fixed;
+    inset: 0;
+  }
+  #term .xterm {
+    height: 100%;
+    padding: 8px 10px;
+  }
+</style>
+</head>
+<body>
+<div id="term"></div>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<script>
+(function () {
+  // Pin / so browser Back does not leave the terminal.
+  history.pushState({ crossbar: 1 }, "", "/");
+  addEventListener("popstate", function () {
+    history.pushState({ crossbar: 1 }, "", "/");
+    if (window.term) window.term.focus();
+  });
+
+  var term = new Terminal({
+    cursorBlink: true,
+    convertEol: true,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace",
+    fontSize: 15,
+    scrollback: 4000,
+    theme: {
+      background: "#0a0a0a",
+      foreground: "#d8d8d8",
+      cursor: "#f2f2f2",
+      selectionBackground: "#2a2a2a"
+    }
+  });
+  window.term = term;
+
+  var fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById("term"));
+  function refit() {
+    fit.fit();
+    term.resize(80, Math.max(term.rows, 24));
+  }
+  refit();
+  addEventListener("resize", refit);
+  if (window.visualViewport) visualViewport.addEventListener("resize", refit);
+  term.focus();
+
+  // Backspace edits the server line buffer. It must not navigate history.
+  term.attachCustomKeyEventHandler(function (ev) {
+    if (ev.type === "keydown" && ev.key === "Backspace") ev.preventDefault();
+    return true;
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Backspace") return;
+    if (ev.target !== term.textarea) {
+      ev.preventDefault();
+      term.focus();
+    }
+  });
+
+  var url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+  var ws = null;
+  var backoff = 500;
+  var superseded = false;
+
+  term.onData(function (data) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+  });
+
+  function connect() {
+    if (superseded) return;
+    var socket = new WebSocket(url);
+    ws = socket;
+    socket.onopen = function () {
+      backoff = 500;
+      term.focus();
+    };
+    socket.onmessage = function (ev) {
+      if (typeof ev.data === "string") term.write(ev.data);
+    };
+    socket.onclose = function (ev) {
+      if (ws !== socket || superseded) return;
+      if (ev.code === 4401) {
+        superseded = true;
+        term.write("\r\n[session open in another tab]\r\n");
+        return;
+      }
+      term.write("\r\n[carrier lost]\r\n");
+      setTimeout(connect, backoff);
+      backoff = Math.min(backoff * 2, 8000);
+    };
+  }
+
+  addEventListener("pagehide", function () {
+    superseded = true;
+    if (ws) ws.close();
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

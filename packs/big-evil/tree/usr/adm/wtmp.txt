@@ -1,0 +1,6 @@
+wtmp excerpt, not the binary
+Sep 25 1985  install, root, console
+Jun 18 1991  sys, console
+Mar  3 1992  hank, tty02, cu bec-mf
+Oct  4 1993  pat, console
+Nov 12 1993  hank, ttyh0, last real login

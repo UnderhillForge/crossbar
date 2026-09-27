@@ -1,0 +1,21 @@
+# Example unit. Cloning this repo does not install it.
+# /etc/crossbar.env must contain CROSSBAR_SECRET.
+[Unit]
+Description=Crossbar terminal for GRAYLINE
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=crossbar
+Group=crossbar
+WorkingDirectory=/opt/crossbar
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/crossbar.env
+ExecStart=/opt/crossbar/.venv/bin/uvicorn crossbar.app:app --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

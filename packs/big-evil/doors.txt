@@ -1,0 +1,7 @@
+DOORS
+
+
+  1   bec — Big Evil Corporation, UNIX V7, PDP-11/70, 1200 baud
+
+type 1 to dial.
+g goes back the way you came.

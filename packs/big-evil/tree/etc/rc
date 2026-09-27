@@ -1,0 +1,5 @@
+# /etc/rc — Big Evil PDP-11/70. Last edit 12 Nov 1993.
+/etc/update
+/etc/cron
+/bin/mount /dev/rk1 /usr
+echo "bec up. do not power off." >/dev/console

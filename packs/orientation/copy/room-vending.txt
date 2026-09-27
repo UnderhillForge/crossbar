@@ -1,0 +1,21 @@
+The machine is dark. A handwritten note on the glass says OUT OF ORDER in three different pens, which suggests a tradition.
+
+The glass still shows the last thing it was willing to print. The booth has transcribed it, badly, because the machine's font was already an apology:
+
+  ----------------------------------------
+        VENDING  —  NIGHT RECEIPT
+        item: nothing
+        tendered: optimism
+        change: none
+        status: out of order
+        see also: notes/night-shift.txt
+        (not on the lobby board. on purpose.)
+  ----------------------------------------
+
+That filename is the whole hint. The file is the superintendent's notes, the second stamp, ORIENT-2, "superintendent's notes," worth seven points and a coupon for this exact machine. The coupon does not repair the machine. The booth has checked with the coupon.
+
+The code itself is in the file. It is not on this glass, not in the news, and not in the motto. If you came here hoping the receipt would just say the prize out loud, the machine respects you too little for that, which is a kind of respect.
+
+There is a coin return. It returns the idea of a coin.
+
+You can go back to the stairwell or over to the kiosk. The machine will not miss you. It is powered off. Missing people is a powered-on behavior.

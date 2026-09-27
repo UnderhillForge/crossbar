@@ -1,0 +1,10 @@
+DOORS
+Terminal Addiction keeps one working door and a lot of opinions.
+
+  1   Orientation — Floor 0
+      A stairwell, a kiosk, a vending machine, and a lock.
+      The annex behind it may be closed for remodeling.
+      The floor itself is this terminal. You do not need the annex to look around.
+
+type 1 to step through.
+g goes back upstairs the way you came.

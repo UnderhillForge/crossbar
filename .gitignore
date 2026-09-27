@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+*.egg-info/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+packs/orientation/flags.env
+packs/big-evil/SECRETS.md
+data/bec-state.json
+data/users/
+data/site/
+data/admin-audit.log

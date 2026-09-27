@@ -1,0 +1,158 @@
+# flavor: v7. A later pack sets flavor: linux31 and ships its own catalog.yaml
+# plus tree/. The interpreter reads this file; it does not hardcode the command list.
+flavor: v7
+# Door period. The Greyline PAD has no era. File mtimes stay inside this range.
+era: "1985-1993"
+uname: "BEC PDP-11/70 UNIX V7"
+uname_mf: "BEC-MF PDP-11/70 UNIX V7"
+path: /bin:/usr/bin
+unix:
+  mode: "755"
+  uid: 0
+  gid: 0
+  size: 40960
+  mtime: "Sep 25  1985"
+df:
+  - {mount: "/", dev: rk0, blocks: 4800, used: 3840, free: 960, pct: "80%"}
+  - {mount: "/usr", dev: rk1, blocks: 19200, used: 18050, free: 1150, pct: "94%"}
+dirs:
+  - {path: /lib, mode: "755", uid: 2, gid: 2, mtime: "Sep 25  1985"}
+  - {path: /dev, mode: "755", uid: 0, gid: 0, mtime: "Aug  3  1985"}
+  - {path: /usr/lib, mode: "755", uid: 2, gid: 2, mtime: "Sep 25  1985"}
+  - {path: /usr/etc, mode: "755", uid: 0, gid: 0, mtime: "Jun 18  1987"}
+  - {path: /usr/spool/lpd, mode: "755", uid: 1, gid: 1, mtime: "Nov 12  1993"}
+bin:
+  mode: "755"
+  uid: 2
+  gid: 2
+  mtime: "Jan 12  1986"
+  names:
+    - sh
+    - date
+    - echo
+    - ls
+    - cat
+    - cp
+    - mv
+    - rm
+    - mkdir
+    - rmdir
+    - chmod
+    - chown
+    - chgrp
+    - test
+    - "["
+    - pwd
+    - sync
+    - kill
+    - ps
+    - su
+    - login
+    - stty
+    - hostname
+    - uname
+    - who
+    - w
+    - tty
+    - mesg
+    - write
+    - wall
+    - ed
+    - ln
+    - wc
+    - od
+    - cmp
+    - sum
+    - file
+    - dd
+    - sleep
+    - "true"
+    - "false"
+  sizes:
+    ls: 2984
+    sh: 4608
+usrbin:
+  mode: "755"
+  uid: 2
+  gid: 2
+  mtime: "Mar  4  1988"
+  names:
+    - grep
+    - egrep
+    - fgrep
+    - head
+    - tail
+    - more
+    - sort
+    - uniq
+    - cut
+    - tr
+    - tee
+    - diff
+    - comm
+    - sed
+    - awk
+    - mail
+    - man
+    - finger
+    - news
+    - calendar
+    - du
+    - df
+    - quot
+    - learn
+    - cu
+    - passwd
+    - useradd
+    - adduser
+    - id
+    - whoami
+    - groups
+    - newgrp
+  stubs:
+    - roff
+    - nroff
+    - troff
+    - lex
+    - yacc
+    - cc
+    - as
+    - ld
+    - adb
+    - dump
+    - restor
+    - tar
+    - cpio
+    - nice
+    - nohup
+    - at
+    - cron
+    - batch
+    - spell
+    - bc
+    - dc
+    - units
+    - plot
+    - spline
+    - bas
+localbin:
+  - name: pico
+    mode: "755"
+    uid: 0
+    gid: 0
+    size: 18432
+    mtime: "Mar 14  1990"
+devs:
+  - {name: console, kind: c, major: 0, minor: 0, mode: "622", uid: 0, gid: 10, mtime: "Aug  3  1985"}
+  - {name: tty, kind: c, major: 0, minor: 1, mode: "666", uid: 0, gid: 10, mtime: "Aug  3  1985"}
+  - {name: tty02, kind: c, major: 0, minor: 2, mode: "666", uid: 0, gid: 10, mtime: "Aug  3  1985"}
+  - {name: tty03, kind: c, major: 0, minor: 3, mode: "666", uid: 0, gid: 10, mtime: "Aug  3  1985"}
+  - {name: ttyh0, kind: c, major: 0, minor: 4, mode: "644", uid: 0, gid: 10, mtime: "Aug  3  1985"}
+  - {name: "null", kind: c, major: 2, minor: 2, mode: "666", uid: 0, gid: 10, mtime: "Aug  3  1985"}
+  - {name: mem, kind: c, major: 3, minor: 0, mode: "640", uid: 0, gid: 3, mtime: "Aug  3  1985"}
+  - {name: kmem, kind: c, major: 3, minor: 1, mode: "640", uid: 0, gid: 3, mtime: "Aug  3  1985"}
+  - {name: rk0, kind: b, major: 5, minor: 0, mode: "640", uid: 0, gid: 0, mtime: "Sep 25  1985"}
+  - {name: rk1, kind: b, major: 5, minor: 1, mode: "640", uid: 0, gid: 0, mtime: "Sep 25  1985"}
+lib:
+  - {name: crt0.o, size: 1024, mtime: "Sep 25  1985"}
+  - {name: libc.a, size: 7168, mtime: "Sep 25  1985"}

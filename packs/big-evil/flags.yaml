@@ -1,0 +1,12 @@
+# Action triggers. The operator console shows these lines.
+# A grant still needs a reason and an audit row. Do not invent claim verbs.
+- id: BEC-GUEST
+  trigger: first successful guest login on bec
+- id: BEC-SYS
+  trigger: become uid of sys
+- id: BEC-ROOT
+  trigger: become uid 0
+- id: BEC-USERADD
+  trigger: root useradd of the player's Greyline handle
+- id: BEC-MF
+  trigger: read /usr/payroll/memo on bec-mf

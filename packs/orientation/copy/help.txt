@@ -1,0 +1,19 @@
+ORIENTATION — Floor 0
+You are {crawler}. This is a dungeon floor, not a shell. Nothing here lists a directory, runs a program, or opens a pipe. If you wanted a real computer, you already had one upstairs and you left it for a stairwell. Bold choice.
+
+  help                 this card
+  news                 the booth's bulletin and the floor motto
+  quest                what the booth still wants
+  score                points, which are fake, and stamps, which are slightly less fake
+  look                 the room you are actually standing in
+  go <room>            stairwell, kiosk, vending, tutorial-arena, superintendent-office
+  talk                 whoever is willing to have it out with you
+  inventory            the sad collection
+  submit <token>       turn in a prize code from the orientation lab
+  bye                  back to Terminal Addiction
+
+Aliases the paint will accept: office, arena, stairs, machine.
+
+The superintendent's office is locked. Looking at a locked door is a hobby, not a strategy. The annex behind the kiosk may be closed for remodeling. When it is open, it is a separate little room on its own network, not this hub, and not a place to get clever with the building.
+
+The booth is watching the puzzle. It is not impressed by volume.

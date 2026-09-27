@@ -1,0 +1,8 @@
+Hank Tyler, night desk, 1990
+
+Mainframe host is bec-mf.
+From a root shell only: cu /dev/ttyh0 bec-mf
+The line ceiling is 9600. A 1200 dialup stays 1200.
+Payroll moved. The memo is on the IBM side, which is still this cu.
+
+This file is not for the outside plant login.

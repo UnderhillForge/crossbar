@@ -1,0 +1,5 @@
+14 Mar 1990
+Installed UW PICO 1.0 under /usr/local/bin/pico.
+It is not vi. vi's termcap on tty02 is still broken.
+ed is the one that shipped. pico is the one I actually use.
+^X gets you out. If you do not know that, use ed.
