@@ -125,6 +125,16 @@ def prompt_for(sess: Session) -> str:
             return "LOGON: "
         return "login: "
     if sess.host == "grayline":
+        if sess.phase == "profile":
+            return "GL>PROF_CON> "
+        if sess.phase == "profile_email":
+            return "GL>PROF_CON> EMAIL: "
+        if sess.phase == "profile_password":
+            return "GL>PROF_CON> PASSWORD: "
+        if sess.phase == "profile_password2":
+            return "GL>PROF_CON> CONFIRM: "
+        if sess.phase == "profile_ps1":
+            return "GL>PROF_CON> PS1: "
         return "GL> "
     return f"{sess.user}@{sess.host}> "
 

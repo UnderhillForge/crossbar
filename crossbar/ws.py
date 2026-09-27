@@ -146,9 +146,12 @@ def push(sess: Session, data: str) -> str:
                 extra = v7.interrupt(sess)
                 out.append("^C\r\n" + extra + prompt_for(sess))
             else:
+                if sess.phase.startswith("profile"):
+                    sess.phase = "shell"
+                    sess.pending_password = ""
                 out.append("^C\r\n" + prompt_for(sess))
             continue
-        if ch == "\t" and sess.user and sess.host == "grayline":
+        if ch == "\t" and sess.user and sess.host == "grayline" and not sess.phase.startswith("profile"):
             from crossbar.lobby import pad_tab
 
             echo, sess.line = pad_tab(sess.line)

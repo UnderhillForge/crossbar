@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 Rpc = Callable[[str, Any], Any]
 
 _URL = "ws://127.0.0.1:3144"
+_BOOTSTRAP = "https://pisecure-bootstrap-production.up.railway.app"
 _NODE_LINES = (
     "unknown flag",
     "already claimed",
@@ -39,6 +40,24 @@ class MethodMissing(Exception):
 
 def rpc_url() -> str:
     return os.environ.get("PISECURE_RPC_URL", "").strip() or _URL
+
+
+def bootstrap_url() -> str:
+    return os.environ.get("PISECURE_BOOTSTRAP_URL", "").strip() or _BOOTSTRAP
+
+
+def _http_json(path: str) -> Any:
+    """JSON from the public bootstrap. None when that service does not answer."""
+    import httpx
+
+    url = bootstrap_url().rstrip("/") + path
+    try:
+        response = httpx.get(url, timeout=5.0, headers={"User-Agent": "crossbar"})
+        response.raise_for_status()
+        data = response.json()
+    except Exception:
+        return None
+    return data if isinstance(data, (dict, list)) else None
 
 
 def _seed() -> bytes | None:
@@ -99,13 +118,20 @@ def normalize_ps1(text: str) -> str:
     return "ps1" + hexpart.lower()
 
 
-def call(method: str, params: Any) -> Any:
-    """One JSON-RPC call. Tests replace this."""
+def valid_shortname(name: str) -> bool:
+    text = name.strip()
+    if not 2 <= len(text) <= 32 or not text[0].isalpha():
+        return False
+    return all(ch.isalnum() or ch in "_-" for ch in text)
+
+
+def call_at(url: str, method: str, params: Any) -> Any:
+    """One JSON-RPC call to a specific node. Tests replace this."""
     import websockets.sync.client
 
     request = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     try:
-        with websockets.sync.client.connect(rpc_url(), open_timeout=2, close_timeout=1) as sock:
+        with websockets.sync.client.connect(url, open_timeout=2, close_timeout=1) as sock:
             sock.send(json.dumps(request))
             raw = sock.recv(timeout=5)
     except Exception as exc:
@@ -124,6 +150,38 @@ def call(method: str, params: Any) -> Any:
             raise MethodMissing(method)
         raise RpcDown(message or "rpc error")
     return parsed.get("result")
+
+
+def call(method: str, params: Any) -> Any:
+    """JSON-RPC on PISECURE_RPC_URL. Tests replace this."""
+    return call_at(rpc_url(), method, params)
+
+
+def directory_rpc_urls() -> list[str]:
+    """Websocket URLs from the bootstrap node list, configured node first."""
+    urls = [rpc_url()]
+    listed = _http_json("/api/v1/nodes/list")
+    nodes = listed.get("nodes") if isinstance(listed, dict) else None
+    if isinstance(nodes, list):
+        for row in nodes:
+            if not isinstance(row, dict):
+                continue
+            host = str(row.get("p2p_host") or row.get("host") or "").strip()
+            if not host:
+                continue
+            port = row.get("rpc_port") or 3144
+            urls.append(f"ws://{host}:{port}")
+    seen: list[str] = []
+    for url in urls:
+        if url and url not in seen:
+            seen.append(url)
+    return seen
+
+
+def _ps1_from_lookup(found: Any) -> str:
+    if not isinstance(found, dict) or not found.get("found"):
+        return ""
+    return normalize_ps1(str(found.get("address") or ""))
 
 
 def node_line(reason: str) -> str:
@@ -278,82 +336,136 @@ def _peer_line(row: dict) -> str:
     return f"  {kind}  {where}"
 
 
+def _bootstrap_pschain() -> str:
+    live = _http_json("/api/v1/network/live")
+    listed = _http_json("/api/v1/nodes/list")
+    if not isinstance(live, dict) and not isinstance(listed, dict):
+        return ""
+    live = live if isinstance(live, dict) else {}
+    lines = []
+    height = live.get("height")
+    lines.append(f"HEIGHT  {height}" if height is not None else "HEIGHT  unavailable")
+    difficulty = live.get("difficulty")
+    lines.append(f"DIFFICULTY  {difficulty}" if difficulty is not None else "DIFFICULTY  unavailable")
+    tip = str(live.get("tip") or "")
+    lines.append(f"HASH  {tip}" if tip else "HASH  unavailable")
+    rate = live.get("network_hashrate")
+    lines.append(f"HASHRATE  {rate}" if rate not in (None, "") else "HASHRATE  unavailable")
+    status = str(live.get("health_status") or "").strip()
+    score = live.get("health_score")
+    if status and score is not None:
+        lines.append(f"HEALTH  {status}  {score}")
+    elif status:
+        lines.append(f"HEALTH  {status}")
+    elif score is not None:
+        lines.append(f"HEALTH  {score}")
+    else:
+        lines.append("HEALTH  unavailable")
+    nodes = listed.get("nodes") if isinstance(listed, dict) else None
+    if not isinstance(nodes, list):
+        nodes = []
+    active = listed.get("active_nodes_count") if isinstance(listed, dict) else None
+    if active is None:
+        active = live.get("active_nodes", len(nodes))
+    lines.append(f"NODES  {active}")
+    for row in nodes:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("node_id") or "node")
+        host = str(row.get("p2p_host") or row.get("host") or "")
+        port = row.get("rpc_port", row.get("p2p_port", ""))
+        where = host or "unknown"
+        if port not in (None, ""):
+            where = f"{where}:{port}"
+        state = str(row.get("status") or "")
+        lines.append(f"  {name}  {where}  {state}".rstrip())
+    return "\r\n".join(lines) + "\r\n"
+
+
 def pschain_text(rpc: Rpc | None = None) -> str:
-    """Peers, height, tip hash, and health. No hashrate and no bootstrap scrape."""
+    """Nodes, height, tip hash, hashrate, and health.
+
+    A pisecured node answers first. The bootstrap directory is used when it does not.
+    A missing hashrate is left unavailable.
+    """
     remote = rpc or call
     try:
         counted = remote("getblockcount", {})
-    except MethodMissing:
-        return "getblockcount is not on this node yet\r\n"
-    except RpcDown:
-        return "node did not answer\r\n"
-    height = counted.get("count") if isinstance(counted, dict) else None
-    lines = [f"HEIGHT  {height}" if height is not None else "HEIGHT  unavailable"]
-    tip = ""
-    if height is not None:
+    except (MethodMissing, RpcDown):
+        counted = None
+    if isinstance(counted, dict) and counted.get("count") is not None:
+        height = counted.get("count")
+        lines = [f"HEIGHT  {height}"]
+        tip = ""
+        difficulty = None
         try:
             header = remote("getheader", {"height": height})
         except (MethodMissing, RpcDown):
             header = None
         if isinstance(header, dict):
             tip = str(header.get("hash") or "")
-    lines.append(f"HASH  {tip}" if tip else "HASH  unavailable")
-    try:
-        peers = remote("getpeers", {})
-    except MethodMissing:
-        lines.append("PEERS  getpeers is not on this node yet")
-        peers = None
-    except RpcDown:
-        lines.append("PEERS  node did not answer")
-        peers = None
-    if peers is not None:
-        shown = [_peer_line(row) for row in _peer_rows(peers)]
-        lines.append(f"PEERS  {len(shown)}")
-        lines.extend(shown)
-    health = "UP"
-    try:
-        threats = remote("getthreats", [])
-    except (MethodMissing, RpcDown):
-        threats = None
-    if isinstance(threats, list) and threats:
-        health = "DEGRADED"
-    lines.append(f"HEALTH  {health}")
-    return "\r\n".join(lines) + "\r\n"
-
-
-def chain_text(rpc: Rpc | None = None) -> str:
-    remote = rpc or call
-    try:
-        info = remote("getchaininfo", {})
-    except MethodMissing:
-        return "getchaininfo is not on this node yet\r\n"
-    except RpcDown:
-        return "node did not answer\r\n"
-    if not isinstance(info, dict):
-        return "getchaininfo is not on this node yet\r\n"
-    height = info.get("height", info.get("blocks", info.get("count")))
-    tip = info.get("tip") or info.get("hash") or info.get("bestblockhash") or ""
-    difficulty = info.get("difficulty", info.get("bits"))
-    supply = info.get("supply", info.get("circulating"))
-    lines = []
-    if height is not None:
-        lines.append(f"HEIGHT  {height}")
-    if tip:
-        lines.append(f"TIP  {tip}")
-    if difficulty is not None:
-        lines.append(f"DIFFICULTY  {difficulty}")
-    if supply is not None:
-        lines.append(f"SUPPLY  {supply}")
-    if not lines:
-        return "getchaininfo is not on this node yet\r\n"
-    return "\r\n".join(lines) + "\r\n"
+            difficulty = header.get("difficulty")
+        lines.append(f"DIFFICULTY  {difficulty}" if difficulty is not None else "DIFFICULTY  unavailable")
+        lines.append(f"HASH  {tip}" if tip else "HASH  unavailable")
+        rate = counted.get("network_hashrate")
+        lines.append(f"HASHRATE  {rate}" if rate not in (None, "") else "HASHRATE  unavailable")
+        try:
+            peers = remote("getpeers", {})
+        except (MethodMissing, RpcDown):
+            peers = None
+        if peers is not None:
+            shown = [_peer_line(row) for row in _peer_rows(peers)]
+            lines.append(f"NODES  {len(shown)}")
+            lines.extend(shown)
+        else:
+            lines.append("NODES  unavailable")
+        health = "UP"
+        try:
+            threats = remote("getthreats", [])
+        except (MethodMissing, RpcDown):
+            threats = None
+        if isinstance(threats, list) and threats:
+            health = "DEGRADED"
+        lines.append(f"HEALTH  {health}")
+        return "\r\n".join(lines) + "\r\n"
+    text = _bootstrap_pschain()
+    if text:
+        return text
+    return "node did not answer\r\n"
 
 
 def lookup_name(name: str, rpc: Rpc | None = None) -> str:
+    """Resolve a short name to a ps1. The configured node is first, then the directory."""
+    text = name.strip()
+    if not valid_shortname(text):
+        return ""
     remote = rpc or call
-    found = remote("namelookup", {"name": name})
-    if isinstance(found, dict) and found.get("found") and found.get("address"):
-        return normalize_ps1(str(found["address"]))
+    try:
+        found = remote("namelookup", {"name": text})
+    except (MethodMissing, RpcDown):
+        found = None
+    else:
+        ps1 = _ps1_from_lookup(found)
+        if ps1:
+            return ps1
+        if isinstance(found, dict):
+            return ""
+    if rpc is not None:
+        raise RpcDown("node did not answer")
+    answered = False
+    for url in directory_rpc_urls():
+        if url == rpc_url():
+            continue
+        try:
+            found = call_at(url, "namelookup", {"name": text})
+        except (MethodMissing, RpcDown):
+            continue
+        answered = True
+        ps1 = _ps1_from_lookup(found)
+        if ps1:
+            return ps1
+    if not answered:
+        raise RpcDown("node did not answer")
     return ""
 
 

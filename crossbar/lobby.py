@@ -95,7 +95,6 @@ PAD_WORDS = (
     "map",
     "profile_config",
     "claim",
-    "chain",
     "pschain",
     "leaders",
     "user_list",
@@ -180,8 +179,7 @@ def help_text() -> str:
         "  BYE\r\n"
         "  PROFILE_CONFIG\r\n"
         "  CLAIM     <flag>\r\n"
-        "  CHAIN\r\n"
-        "  PSCHAIN\r\n"
+        "  PSCHAIN   nodes hash health\r\n"
         "  LEADERS\r\n"
         "  USER_LIST\r\n"
         "  orientation circuit is BEC\r\n"

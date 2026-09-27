@@ -16,7 +16,6 @@ from crossbar.accounts import (
     wallet_of,
 )
 from crossbar.commands import (
-    cmd_chain,
     cmd_claim,
     cmd_leaders,
     cmd_profile,
@@ -147,19 +146,50 @@ class ClaimTests(unittest.TestCase):
         self.assertIn("HANDLE  adaone", opened)
         self.assertIn(ps1, opened)
         self.assertNotIn("secret", opened.lower())
+        self.assertEqual(first.phase, "profile")
 
-    def test_chain_says_when_the_method_is_missing(self) -> None:
-        def rpc(method, params):
-            raise chainrpc.MethodMissing(method)
+    def test_profile_menu_asks_instead_of_returning_to_gl(self) -> None:
+        from crossbar.accounts import email_of
+        from crossbar.ws import push
 
-        original = chainrpc.call
-        chainrpc.call = rpc
-        try:
-            sess = _sess("chainy")
-            text = cmd_chain(sess, [])
-        finally:
-            chainrpc.call = original
-        self.assertEqual(text, "getchaininfo is not on this node yet\r\n")
+        sess = _sess("editor")
+        sess.phase = "shell"
+        opened = push(sess, "profile_config\r")
+        self.assertIn("1 EMAIL", opened)
+        self.assertTrue(opened.endswith("GL>PROF_CON> "))
+        asked = push(sess, "1\r")
+        self.assertEqual(sess.phase, "profile_email")
+        self.assertTrue(asked.endswith("GL>PROF_CON> EMAIL: "))
+        self.assertNotIn("login:", asked)
+        saved = push(sess, "editor@example.com\r")
+        self.assertIn("email saved", saved)
+        self.assertIn("editor@example.com", saved)
+        self.assertTrue(saved.endswith("GL>PROF_CON> "))
+        self.assertEqual(email_of("editor"), "editor@example.com")
+        secret = push(sess, "2\rsecret99\rsecret99\r")
+        self.assertNotIn("secret99", secret)
+        self.assertIn("password saved", secret)
+        self.assertTrue(secret.endswith("GL>PROF_CON> "))
+        linked = push(sess, "3\r")
+        self.assertTrue(linked.endswith("GL>PROF_CON> PS1: "))
+        menu = push(sess, "\r")
+        self.assertTrue(menu.endswith("GL>PROF_CON> "))
+        self.assertEqual(sess.phase, "profile")
+        back = push(sess, "q\r")
+        self.assertTrue(back.endswith("GL> "))
+        self.assertEqual(sess.phase, "shell")
+        push(sess, "profile_config\r")
+        cancelled = push(sess, "\x03")
+        self.assertTrue(cancelled.endswith("GL> "))
+        self.assertEqual(sess.phase, "shell")
+
+    def test_chain_is_not_a_lobby_command(self) -> None:
+        from crossbar.ws import push
+
+        sess = _sess("nochains")
+        sess.phase = "shell"
+        text = push(sess, "chain\r")
+        self.assertIn("chain: not found", text)
 
     def test_bounty_is_escrow_and_the_fee_is_one_coin(self) -> None:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -285,7 +315,7 @@ class ClaimTests(unittest.TestCase):
                 return {"count": 12}
             if method == "getheader":
                 self.assertEqual(params, {"height": 12})
-                return {"hash": "ab" * 32, "height": 12}
+                return {"hash": "ab" * 32, "height": 12, "difficulty": 9}
             if method == "getpeers":
                 return [
                     {"address": "127.0.0.1", "port": 3144, "host": "pisecure.local"},
@@ -303,12 +333,13 @@ class ClaimTests(unittest.TestCase):
         finally:
             chainrpc.call = original
         self.assertIn("HEIGHT  12", text)
+        self.assertIn("DIFFICULTY  9", text)
         self.assertIn("HASH  " + "ab" * 32, text)
-        self.assertIn("PEERS  2", text)
+        self.assertIn("NODES  2", text)
         self.assertIn("NODE  pisecure.local  127.0.0.1:3144", text)
         self.assertIn(f"HINT  {secret}:3144", text)
         self.assertIn("HEALTH  UP", text)
-        self.assertNotIn("hashrate", text.lower())
+        self.assertIn("HASHRATE  unavailable", text)
 
     def test_pschain_degraded_hides_threat_details(self) -> None:
         def rpc(method, params):
@@ -329,7 +360,7 @@ class ClaimTests(unittest.TestCase):
         finally:
             chainrpc.call = original
         self.assertIn("HEALTH  DEGRADED", text)
-        self.assertIn("PEERS  0", text)
+        self.assertIn("NODES  0", text)
         self.assertNotIn("198.51.100.4", text)
         self.assertNotIn("scan", text)
 
@@ -337,8 +368,136 @@ class ClaimTests(unittest.TestCase):
         def rpc(method, params):
             raise chainrpc.RpcDown("closed")
 
-        text = chainrpc.pschain_text(rpc)
+        http = chainrpc._http_json
+        chainrpc._http_json = lambda path: None
+        try:
+            text = chainrpc.pschain_text(rpc)
+        finally:
+            chainrpc._http_json = http
         self.assertEqual(text, "node did not answer\r\n")
+
+    def test_bootstrap_feeds_pschain_when_the_node_is_down(self) -> None:
+        def rpc(method, params):
+            raise chainrpc.RpcDown("closed")
+
+        def http(path):
+            if path == "/api/v1/network/live":
+                return {
+                    "height": 1171,
+                    "tip": "ab" * 32,
+                    "difficulty": 16,
+                    "network_hashrate": None,
+                    "health_status": "Poor",
+                    "health_score": 15,
+                }
+            if path == "/api/v1/nodes/list":
+                return {
+                    "active_nodes_count": 1,
+                    "nodes": [
+                        {
+                            "node_id": "pisecured-lab",
+                            "p2p_host": "203.0.113.10",
+                            "rpc_port": 3144,
+                            "status": "active",
+                        }
+                    ],
+                }
+            return None
+
+        original = chainrpc.call
+        http_orig = chainrpc._http_json
+        chainrpc.call = rpc
+        chainrpc._http_json = http
+        try:
+            board = chainrpc.pschain_text()
+        finally:
+            chainrpc.call = original
+            chainrpc._http_json = http_orig
+        self.assertIn("HEIGHT  1171", board)
+        self.assertIn("DIFFICULTY  16", board)
+        self.assertIn("HASH  " + "ab" * 32, board)
+        self.assertIn("HASHRATE  unavailable", board)
+        self.assertIn("HEALTH  Poor  15", board)
+        self.assertIn("NODES  1", board)
+        self.assertIn("pisecured-lab  203.0.113.10:3144  active", board)
+
+    def test_profile_stores_email_password_and_ps1(self) -> None:
+        from crossbar.accounts import authenticate, email_of
+        from crossbar.ws import push
+
+        sess = _sess("keeper")
+        sess.phase = "shell"
+        push(sess, "profile_config\r")
+        saved = push(sess, "keeper@example.com\r")
+        self.assertIn("email saved", saved)
+        self.assertIn("EMAIL   keeper@example.com", saved)
+        self.assertEqual(email_of("keeper"), "keeper@example.com")
+        push(sess, "2\rsecret99\r")
+        done = push(sess, "secret99\r")
+        self.assertIn("password saved", done)
+        self.assertTrue(authenticate("keeper", "secret99"))
+        ps1 = "ps1" + "99" * 32
+        linked = push(sess, ps1 + "\r")
+        self.assertIn("ps1 saved", linked)
+        self.assertEqual(wallet_of("keeper"), ps1)
+        self.assertIn("keeper@example.com", linked)
+
+    def test_short_name_resolves_to_a_ps1(self) -> None:
+        from crossbar.ws import push
+
+        sess = _sess("namer")
+        sess.phase = "shell"
+        ps1 = "ps1" + "a1" * 32
+        seen: list[str] = []
+
+        def rpc(method, params):
+            seen.append(method)
+            if method == "namelookup" and params.get("name") == "alice":
+                return {"found": True, "name": "alice", "address": ps1}
+            raise chainrpc.RpcDown("closed")
+
+        original = chainrpc.call
+        chainrpc.call = rpc
+        try:
+            push(sess, "profile_config\r")
+            saved = push(sess, "alice\r")
+        finally:
+            chainrpc.call = original
+        self.assertIn("ps1 saved", saved)
+        self.assertIn(ps1, saved)
+        self.assertEqual(wallet_of("namer"), ps1)
+        self.assertIn("namelookup", seen)
+
+    def test_short_name_uses_a_directory_node_when_the_local_node_is_down(self) -> None:
+        ps1 = "ps1" + "a2" * 32
+
+        def rpc(method, params):
+            raise chainrpc.RpcDown("closed")
+
+        def http(path):
+            if path == "/api/v1/nodes/list":
+                return {"nodes": [{"p2p_host": "203.0.113.10", "rpc_port": 3144}]}
+            return None
+
+        def at(url, method, params):
+            self.assertEqual(url, "ws://203.0.113.10:3144")
+            self.assertEqual(method, "namelookup")
+            self.assertEqual(params, {"name": "alice"})
+            return {"found": True, "name": "alice", "address": ps1}
+
+        original = chainrpc.call
+        http_orig = chainrpc._http_json
+        at_orig = chainrpc.call_at
+        chainrpc.call = rpc
+        chainrpc._http_json = http
+        chainrpc.call_at = at
+        try:
+            found = chainrpc.lookup_name("alice")
+        finally:
+            chainrpc.call = original
+            chainrpc._http_json = http_orig
+            chainrpc.call_at = at_orig
+        self.assertEqual(found, ps1)
 
     def test_leaders_and_user_list(self) -> None:
         import tempfile
@@ -407,10 +566,8 @@ class ClaimTests(unittest.TestCase):
             sock.close()
         if not up:
             return
-        text = chainrpc.chain_text()
-        self.assertTrue(
-            text.startswith("HEIGHT") or "getchaininfo is not on this node yet" in text or "node did not answer" in text
-        )
+        text = chainrpc.pschain_text()
+        self.assertTrue("HEIGHT" in text or "node did not answer" in text)
         self.assertNotIn("claimed", text)
 
 

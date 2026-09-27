@@ -61,7 +61,7 @@ _HELP_TOPICS = {
     "logout": "clear your name",
     "bec": "orientation circuit, 1200, outside plant",
     "claim": "claim a flag for the linked ps1",
-    "pschain": "peers, height, tip hash, health",
+    "pschain": "nodes, height, difficulty, hash, health",
     "leaders": "top 20 by accepted claims",
     "user_list": "accounts, rank, last login",
 }
@@ -498,42 +498,72 @@ def profile_line(sess: Session, raw: str) -> str:
                 sess.phase = "shell"
                 return ""
             return _profile_menu(sess)
+        head, _, rest = text.partition(" ")
+        head = head.lower()
+        if head in {"1", "email"} and rest.strip():
+            return _save_email(sess, rest.strip())
+        if head in {"3", "ps1"} and rest.strip():
+            return _link_ps1(sess, rest.strip()) + _profile_menu(sess)
         if choice in {"1", "email"}:
             sess.phase = "profile_email"
-            return "EMAIL\r\n"
+            return ""
         if choice in {"2", "password"}:
             sess.phase = "profile_password"
-            return "PASSWORD\r\n"
+            return ""
         if choice in {"3", "ps1"}:
             sess.phase = "profile_ps1"
-            return "PS1\r\n"
-        return "1 EMAIL\r\n2 PASSWORD\r\n3 PS1\r\nQ BACK\r\n"
+            return ""
+        if _EMAIL.fullmatch(text):
+            return _save_email(sess, text)
+        if chainrpc.normalize_ps1(text) or chainrpc.valid_shortname(text):
+            return _link_ps1(sess, text) + _profile_menu(sess)
+        return "not saved\r\n1 EMAIL\r\n2 PASSWORD\r\n3 PS1\r\nQ BACK\r\n"
     if phase == "profile_email":
-        email = text
-        if not _EMAIL.fullmatch(email) or len(email) > 254:
-            return "email: name@host\r\nEMAIL\r\n"
-        set_account_fields(sess.user or "", email=email)
-        sess.phase = "profile"
-        return "email saved\r\n" + _profile_menu(sess)
+        if not text:
+            sess.phase = "profile"
+            return _profile_menu(sess)
+        return _save_email(sess, text)
     if phase == "profile_password":
+        if not text:
+            sess.phase = "profile"
+            return _profile_menu(sess)
         if len(text) < 4:
-            return "password: at least 4 characters\r\nPASSWORD\r\n"
+            return "password: at least 4 characters\r\n"
         sess.pending_password = text
         sess.phase = "profile_password2"
-        return "CONFIRM\r\n"
+        return ""
     if phase == "profile_password2":
+        if not text:
+            sess.pending_password = ""
+            sess.phase = "profile"
+            return _profile_menu(sess)
         if text != sess.pending_password:
             sess.pending_password = ""
             sess.phase = "profile_password"
-            return "passwords differ\r\nPASSWORD\r\n"
+            return "passwords differ\r\n"
         set_account_fields(sess.user or "", password_hash=hash_password(text), must_change=0)
         sess.pending_password = ""
         sess.phase = "profile"
         return "password saved\r\n" + _profile_menu(sess)
     if phase == "profile_ps1":
+        if not text:
+            sess.phase = "profile"
+            return _profile_menu(sess)
         return _link_ps1(sess, text) + _profile_menu(sess)
     sess.phase = "shell"
     return ""
+
+
+def _save_email(sess: Session, email: str) -> str:
+    handle = sess.user or ""
+    if not _EMAIL.fullmatch(email) or len(email) > 254:
+        return "email: name@host\r\n"
+    set_account_fields(handle, email=email)
+    stored = email_of(handle)
+    sess.phase = "profile"
+    if stored != email:
+        return "email not saved\r\n" + _profile_menu(sess)
+    return "email saved\r\n" + _profile_menu(sess)
 
 
 def _link_ps1(sess: Session, text: str) -> str:
@@ -547,7 +577,7 @@ def _link_ps1(sess: Session, text: str) -> str:
             return "name lookup is not on this node yet\r\n"
         except chainrpc.RpcDown:
             sess.phase = "profile"
-            return "node did not answer\r\n"
+            return "not saved: node did not answer\r\n"
     if not ps1:
         sess.phase = "profile"
         return "ps1 not found\r\n"
@@ -591,12 +621,6 @@ def cmd_claim(sess: Session, args: list[str]) -> str:
     if not args:
         return "claim: usage: claim FLAG_ID\r\n"
     return perform_claim(sess, args[0])
-
-
-def cmd_chain(sess: Session, args: list[str]) -> str:
-    if sess.host != "grayline":
-        return "chain: not found\r\n"
-    return chainrpc.chain_text()
 
 
 def cmd_pschain(sess: Session, args: list[str]) -> str:
@@ -689,7 +713,6 @@ COMMANDS: dict[str, Callable[[Session, list[str]], str]] = {
     "exit": cmd_logout,
     "profile_config": cmd_profile,
     "claim": cmd_claim,
-    "chain": cmd_chain,
     "pschain": cmd_pschain,
     "leaders": cmd_leaders,
     "user_list": cmd_user_list,
@@ -720,8 +743,6 @@ def submit(sess: Session) -> str:
         return body + prompt_for(sess)
     stripped = text.strip()
     if not stripped:
-        if sess.host == "grayline" and sess.user:
-            return header_line(sess.user) + prompt_for(sess)
         return prompt_for(sess)
     if not sess.history or sess.history[-1] != stripped:
         sess.history.append(stripped)
