@@ -7,9 +7,25 @@ import socket
 import unittest
 from urllib.parse import urlparse
 
-from crossbar.accounts import create_account, get_account, set_account_fields, wallet_of
-from crossbar.commands import cmd_chain, cmd_claim, cmd_profile, profile_line
+from crossbar.accounts import (
+    connect,
+    create_account,
+    get_account,
+    record_claim,
+    set_account_fields,
+    wallet_of,
+)
+from crossbar.commands import (
+    cmd_chain,
+    cmd_claim,
+    cmd_leaders,
+    cmd_profile,
+    cmd_pschain,
+    cmd_user_list,
+    profile_line,
+)
 from crossbar import chainrpc
+from crossbar import v7
 from crossbar.session import Session, get_session
 
 
@@ -202,6 +218,182 @@ class ClaimTests(unittest.TestCase):
             + '","type":"claimflag","version":1}'
         )
         self.assertEqual(payload, expected)
+
+    def test_repeat_claim_does_not_call_the_node(self) -> None:
+        sess = _sess("repeater")
+        ps1 = "ps1" + "44" * 32
+        set_account_fields("repeater", wallet=ps1)
+        record_claim("repeater", "EVENT1", ps1, "aa" * 32)
+
+        def boom(method, params):
+            raise AssertionError(method)
+
+        original = chainrpc.call
+        chainrpc.call = boom
+        try:
+            text = cmd_claim(sess, ["EVENT1"])
+        finally:
+            chainrpc.call = original
+        self.assertEqual(text, "already yours\r\n")
+
+    def test_event_flag_from_the_door_submits_a_claim(self) -> None:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        sess = _sess("doorer")
+        ps1 = "ps1" + "55" * 32
+        set_account_fields("doorer", wallet=ps1)
+        sess.host = "bec"
+        local = v7._cmd_claim(sess, ["BEC-GUEST"])
+        self.assertIn("permission denied", local)
+        seed = Ed25519PrivateKey.generate().private_bytes_raw().hex()
+        os.environ["PISECURE_AWARDS_KEY"] = seed
+        seen: list[str] = []
+
+        def rpc(method, params):
+            seen.append(method)
+            if method == "listflags" and params.get("address") == ps1:
+                return {"flag_ids": []}
+            if method == "listflags":
+                return {"found": True, "bounty_units": 4, "max_claims": 8}
+            if method == "listunspent":
+                return {"utxos": [{"txid": "cc" * 32, "vout": 0, "units": 3}]}
+            if method == "claimflag":
+                self.assertEqual(params.get("flag_id"), "EVENT1")
+                self.assertEqual(params.get("recipient"), ps1)
+                paid = [row for row in params.get("outputs") or [] if row.get("address") == ps1]
+                self.assertEqual(paid, [{"address": ps1, "value": 4}])
+                self.assertNotIn("answer", params)
+                return {"status": "accepted", "txid": "dd" * 32}
+            raise AssertionError(method)
+
+        original = chainrpc.call
+        chainrpc.call = rpc
+        try:
+            text = v7._cmd_claim(sess, ["EVENT1"])
+        finally:
+            chainrpc.call = original
+            os.environ.pop("PISECURE_AWARDS_KEY", None)
+        self.assertEqual(text, "claimed\r\n")
+        self.assertIn("claimflag", seen)
+        self.assertNotIn("createflag", seen)
+
+    def test_pschain_prints_peers_height_hash_and_health(self) -> None:
+        secret = "203.0.113.9"
+
+        def rpc(method, params):
+            if method == "getblockcount":
+                return {"count": 12}
+            if method == "getheader":
+                self.assertEqual(params, {"height": 12})
+                return {"hash": "ab" * 32, "height": 12}
+            if method == "getpeers":
+                return [
+                    {"address": "127.0.0.1", "port": 3144, "host": "pisecure.local"},
+                    {"address": secret, "port": 3144, "hint": True},
+                ]
+            if method == "getthreats":
+                return []
+            raise AssertionError(method)
+
+        original = chainrpc.call
+        chainrpc.call = rpc
+        try:
+            sess = _sess("pspeek")
+            text = cmd_pschain(sess, [])
+        finally:
+            chainrpc.call = original
+        self.assertIn("HEIGHT  12", text)
+        self.assertIn("HASH  " + "ab" * 32, text)
+        self.assertIn("PEERS  2", text)
+        self.assertIn("NODE  pisecure.local  127.0.0.1:3144", text)
+        self.assertIn(f"HINT  {secret}:3144", text)
+        self.assertIn("HEALTH  UP", text)
+        self.assertNotIn("hashrate", text.lower())
+
+    def test_pschain_degraded_hides_threat_details(self) -> None:
+        def rpc(method, params):
+            if method == "getblockcount":
+                return {"count": 3}
+            if method == "getheader":
+                return {"hash": "cd" * 32}
+            if method == "getpeers":
+                return []
+            if method == "getthreats":
+                return [{"ip": "198.51.100.4", "type": "scan"}]
+            raise AssertionError(method)
+
+        original = chainrpc.call
+        chainrpc.call = rpc
+        try:
+            text = chainrpc.pschain_text(rpc)
+        finally:
+            chainrpc.call = original
+        self.assertIn("HEALTH  DEGRADED", text)
+        self.assertIn("PEERS  0", text)
+        self.assertNotIn("198.51.100.4", text)
+        self.assertNotIn("scan", text)
+
+    def test_pschain_when_the_node_is_down(self) -> None:
+        def rpc(method, params):
+            raise chainrpc.RpcDown("closed")
+
+        text = chainrpc.pschain_text(rpc)
+        self.assertEqual(text, "node did not answer\r\n")
+
+    def test_leaders_and_user_list(self) -> None:
+        import tempfile
+
+        previous = os.environ.get("CROSSBAR_DB")
+        fd, path = tempfile.mkstemp(prefix="grayline-board-", suffix=".db")
+        os.close(fd)
+        os.environ["CROSSBAR_DB"] = path
+        try:
+            conn = connect()
+            now = "2026-09-01T00:00:00Z"
+            conn.execute(
+                "INSERT INTO accounts (handle, password_hash, email, created, last_login, status) "
+                "VALUES (?, ?, ?, ?, ?, 'ok')",
+                ("quiet", "x", "quiet@example.com", now, "2026-09-02T00:00:00Z"),
+            )
+            conn.execute(
+                "INSERT INTO accounts (handle, password_hash, email, created, last_login, status) "
+                "VALUES (?, ?, ?, ?, ?, 'ok')",
+                ("ace", "x", "ace@example.com", now, "2026-09-03T00:00:00Z"),
+            )
+            for index in range(21):
+                handle = f"b{index:02d}"
+                conn.execute(
+                    "INSERT INTO accounts (handle, password_hash, email, created, last_login, status) "
+                    "VALUES (?, ?, ?, ?, ?, 'ok')",
+                    (handle, "x", f"{handle}@example.com", now, now),
+                )
+            conn.commit()
+            for n in range(3):
+                record_claim("ace", f"F{n}", "ps1" + "66" * 32, f"{n:064x}")
+            for index in range(21):
+                record_claim(f"b{index:02d}", "ONE", "ps1" + "77" * 32, f"{index + 1:064x}")
+            sess = get_session("sid-board")
+            sess.user = "ace"
+            sess.host = "grayline"
+            board = cmd_leaders(sess, [])
+            listing = cmd_user_list(sess, [])
+        finally:
+            if previous is None:
+                os.environ.pop("CROSSBAR_DB", None)
+            else:
+                os.environ["CROSSBAR_DB"] = previous
+            connect()
+            os.remove(path)
+        self.assertTrue(board.startswith("RANK  HANDLE        CLAIMS  LAST"))
+        self.assertIn("1     ace", board)
+        self.assertLess(board.find("ace"), board.find("b00"))
+        lines = [line for line in board.splitlines()[1:] if line]
+        self.assertEqual(len(lines), 20)
+        self.assertNotIn("b19", board)
+        self.assertNotIn("b20", board)
+        self.assertIn("quiet         -     2026-09-02T00:00:00Z", listing)
+        self.assertNotIn("@", listing)
+        self.assertNotIn("ps1", listing)
 
     def test_live_node_only_if_it_answers(self) -> None:
         url = urlparse(chainrpc.rpc_url())

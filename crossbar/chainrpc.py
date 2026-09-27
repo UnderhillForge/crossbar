@@ -246,6 +246,81 @@ def claim_flag(flag_id: str, ps1: str, rpc: Rpc | None = None) -> tuple[str, str
     return node_line(str(result.get("reason") or "")), ""
 
 
+def _peer_rows(result: Any) -> list[dict]:
+    if isinstance(result, list):
+        return [row for row in result if isinstance(row, dict)]
+    if not isinstance(result, dict):
+        return []
+    rows: list[dict] = []
+    self_row = result.get("self")
+    if isinstance(self_row, dict):
+        rows.append(self_row)
+    nested = result.get("peers") or result.get("nodes")
+    if isinstance(nested, list):
+        rows.extend(row for row in nested if isinstance(row, dict))
+    if rows:
+        return rows
+    if result.get("address") or result.get("host"):
+        return [result]
+    return []
+
+
+def _peer_line(row: dict) -> str:
+    host = str(row.get("host") or "")
+    address = str(row.get("address") or "")
+    port = row.get("port")
+    where = address or host or "unknown"
+    if port not in (None, ""):
+        where = f"{where}:{port}"
+    if host and address and host != address:
+        where = f"{host}  {where}"
+    kind = "HINT" if row.get("hint") else "NODE"
+    return f"  {kind}  {where}"
+
+
+def pschain_text(rpc: Rpc | None = None) -> str:
+    """Peers, height, tip hash, and health. No hashrate and no bootstrap scrape."""
+    remote = rpc or call
+    try:
+        counted = remote("getblockcount", {})
+    except MethodMissing:
+        return "getblockcount is not on this node yet\r\n"
+    except RpcDown:
+        return "node did not answer\r\n"
+    height = counted.get("count") if isinstance(counted, dict) else None
+    lines = [f"HEIGHT  {height}" if height is not None else "HEIGHT  unavailable"]
+    tip = ""
+    if height is not None:
+        try:
+            header = remote("getheader", {"height": height})
+        except (MethodMissing, RpcDown):
+            header = None
+        if isinstance(header, dict):
+            tip = str(header.get("hash") or "")
+    lines.append(f"HASH  {tip}" if tip else "HASH  unavailable")
+    try:
+        peers = remote("getpeers", {})
+    except MethodMissing:
+        lines.append("PEERS  getpeers is not on this node yet")
+        peers = None
+    except RpcDown:
+        lines.append("PEERS  node did not answer")
+        peers = None
+    if peers is not None:
+        shown = [_peer_line(row) for row in _peer_rows(peers)]
+        lines.append(f"PEERS  {len(shown)}")
+        lines.extend(shown)
+    health = "UP"
+    try:
+        threats = remote("getthreats", [])
+    except (MethodMissing, RpcDown):
+        threats = None
+    if isinstance(threats, list) and threats:
+        health = "DEGRADED"
+    lines.append(f"HEALTH  {health}")
+    return "\r\n".join(lines) + "\r\n"
+
+
 def chain_text(rpc: Rpc | None = None) -> str:
     remote = rpc or call
     try:

@@ -1,6 +1,6 @@
 # Crossbar
 
-Crossbar 0.2.0 is the terminal switchboard for GRAYLINE. The public face is [grayline.dev](https://grayline.dev): one full-screen terminal and a private session per browser.
+Crossbar 0.3.0 is the terminal switchboard for GRAYLINE. The public face is [grayline.dev](https://grayline.dev): one full-screen terminal and a private session per browser.
 
 This repo is the app. It runs on the VPS behind the existing nginx. TLS stays on nginx. The in-world machine is GRAYLINE. The lobby has no year. A door's period starts after `CONNECT`.
 
@@ -81,8 +81,11 @@ These three commands exist only at `GL>`, and only for a real account. Guest get
 | Command | What it does |
 | --- | --- |
 | `profile_config` | Menu for this account. The handle is fixed. `1` changes email, `2` changes the password, `3` links one `ps1`. A short name is resolved with `namelookup`. The same `ps1` cannot sit on two accounts. If the node answers `listunspent`, the menu shows that balance. |
-| `claim FLAG_ID` | Claims that flag for the linked `ps1`. With no link: `link a wallet first: ps1 link can be found in profile_config`. If `listflags` for that address already includes the flag: `already yours`. Otherwise the server submits `claimflag`, signed by the awards key, with `flag_id` and that `ps1`. The doorway answer stays in Crossbar. Acceptance replies `claimed` and stores the flag id, `ps1`, and txid on the account. |
+| `claim FLAG_ID` | Claims that flag for the linked `ps1`. With no link: `link a wallet first: ps1 link can be found in profile_config`. A claim already stored for this account, or a `ps1` that `listflags` already shows for that flag, replies `already yours` and does not submit again. Otherwise the server submits `claimflag`, signed by the awards key, with `flag_id` and that `ps1`. The doorway answer stays in Crossbar. Acceptance replies `claimed` and stores the flag id, `ps1`, and txid on the account. The same claim works from the BEC shell when the id is not a local BEC stamp. |
 | `chain` | Calls `getchaininfo` and prints height, tip hash, difficulty, and circulating supply. |
+| `pschain` | Peers from `getpeers`, height from `getblockcount`, the tip hash from `getheader`, and health. Health is `UP` when the node answers and `DEGRADED` when `getthreats` returns rows. This is the tip hash, not a hashrate. |
+| `leaders` | Top 20 accounts by accepted claims on this hub. Ties share a rank. |
+| `user_list` | Every registered account, its leaderboard rank when it has claims, and last login. |
 
 Node replies that Crossbar prints as one line: `unknown flag`, `already claimed`, `flag exhausted`, `flag expired`, `unlimited flag cannot pay`. A missing flag method is `flags are not on this node yet`, and the account is not marked claimed. A missing `getchaininfo` is `getchaininfo is not on this node yet`. `createflag` is not a lobby command.
 

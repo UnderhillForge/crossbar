@@ -13,10 +13,13 @@ from crossbar.accounts import (
     RESERVED,
     achievements_for,
     authenticate,
+    claim_ranks,
+    claim_recorded,
     create_account,
     email_of,
     get_account,
     hash_password,
+    list_accounts,
     record_claim,
     set_account_fields,
     wallet_of,
@@ -57,6 +60,10 @@ _HELP_TOPICS = {
     "bye": "back along the circuit",
     "logout": "clear your name",
     "bec": "orientation circuit, 1200, outside plant",
+    "claim": "claim a flag for the linked ps1",
+    "pschain": "peers, height, tip hash, health",
+    "leaders": "top 20 by accepted claims",
+    "user_list": "accounts, rank, last login",
 }
 
 
@@ -557,17 +564,18 @@ def _link_ps1(sess: Session, text: str) -> str:
     return "ps1 saved\r\n"
 
 
-def cmd_claim(sess: Session, args: list[str]) -> str:
-    if sess.host != "grayline":
-        return "claim: not found\r\n"
+def perform_claim(sess: Session, flag_id: str) -> str:
+    """Claim one flag for this account's ps1. The doorway answer stays here."""
     if not sess.user or sess.user == "guest" or get_account(sess.user) is None:
         return "logon required\r\n"
-    if not args:
+    flag_id = flag_id.strip()
+    if not flag_id:
         return "claim: usage: claim FLAG_ID\r\n"
-    flag_id = args[0]
     ps1 = wallet_of(sess.user)
     if not ps1:
         return "link a wallet first: ps1 link can be found in profile_config\r\n"
+    if claim_recorded(sess.user, flag_id):
+        return "already yours\r\n"
     line, txid = chainrpc.claim_flag(flag_id, ps1)
     if line == "claimed" and txid:
         record_claim(sess.user, flag_id, ps1, txid)
@@ -577,10 +585,59 @@ def cmd_claim(sess: Session, args: list[str]) -> str:
     return line if line.endswith("\r\n") else line + "\r\n"
 
 
+def cmd_claim(sess: Session, args: list[str]) -> str:
+    if sess.host != "grayline":
+        return "claim: not found\r\n"
+    if not args:
+        return "claim: usage: claim FLAG_ID\r\n"
+    return perform_claim(sess, args[0])
+
+
 def cmd_chain(sess: Session, args: list[str]) -> str:
     if sess.host != "grayline":
         return "chain: not found\r\n"
     return chainrpc.chain_text()
+
+
+def cmd_pschain(sess: Session, args: list[str]) -> str:
+    if sess.host != "grayline":
+        return "pschain: not found\r\n"
+    return chainrpc.pschain_text()
+
+
+def _login_stamp(value: object) -> str:
+    text = str(value or "").strip()
+    return text or "none"
+
+
+def cmd_leaders(sess: Session, args: list[str]) -> str:
+    if sess.host != "grayline":
+        return "leaders: not found\r\n"
+    ranks = claim_ranks()
+    ordered = sorted(ranks.items(), key=lambda item: (item[1][0], item[0]))
+    if not ordered:
+        return "no claims yet\r\n"
+    lines = ["RANK  HANDLE        CLAIMS  LAST"]
+    logins = {row["handle"]: row.get("last_login") for row in list_accounts()}
+    for handle, (place, count) in ordered[:20]:
+        lines.append(f"{place:<6}{handle:<14}{count:<8}{_login_stamp(logins.get(handle))}")
+    return "\r\n".join(lines) + "\r\n"
+
+
+def cmd_user_list(sess: Session, args: list[str]) -> str:
+    if sess.host != "grayline":
+        return "user_list: not found\r\n"
+    rows = list_accounts()
+    if not rows:
+        return "no accounts\r\n"
+    ranks = claim_ranks()
+    lines = ["HANDLE        RANK  LAST"]
+    for row in rows:
+        handle = str(row["handle"])
+        found = ranks.get(handle)
+        place = "-" if found is None else str(found[0])
+        lines.append(f"{handle:<14}{place:<6}{_login_stamp(row.get('last_login'))}")
+    return "\r\n".join(lines) + "\r\n"
 
 
 def cmd_logout(sess: Session, args: list[str]) -> str:
@@ -633,6 +690,9 @@ COMMANDS: dict[str, Callable[[Session, list[str]], str]] = {
     "profile_config": cmd_profile,
     "claim": cmd_claim,
     "chain": cmd_chain,
+    "pschain": cmd_pschain,
+    "leaders": cmd_leaders,
+    "user_list": cmd_user_list,
 }
 
 

@@ -52,6 +52,9 @@ _GRAYLINE_COMMANDS = frozenset(
         "profile_config",
         "claim",
         "chain",
+        "pschain",
+        "leaders",
+        "user_list",
     }
 )
 

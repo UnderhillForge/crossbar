@@ -304,6 +304,36 @@ def wallet_owner(ps1: str) -> str | None:
     return str(row["handle"])
 
 
+def claim_recorded(handle: str, flag_id: str) -> bool:
+    row = connect().execute(
+        "SELECT 1 FROM flag_claims WHERE handle = ? AND flag_id = ?",
+        (handle, flag_id),
+    ).fetchone()
+    return row is not None
+
+
+def claim_ranks() -> dict[str, tuple[int, int]]:
+    """Competition rank and claim count for accounts that have at least one claim."""
+    rows = connect().execute(
+        "SELECT handle, COUNT(*) AS n FROM flag_claims GROUP BY handle"
+    ).fetchall()
+    ordered = sorted(
+        ((str(row["handle"]), int(row["n"])) for row in rows if int(row["n"]) > 0),
+        key=lambda item: (-item[1], item[0]),
+    )
+    ranks: dict[str, tuple[int, int]] = {}
+    place = 0
+    seen = 0
+    previous: int | None = None
+    for handle, count in ordered:
+        seen += 1
+        if count != previous:
+            place = seen
+            previous = count
+        ranks[handle] = (place, count)
+    return ranks
+
+
 def record_claim(handle: str, flag_id: str, ps1: str, txid: str) -> None:
     conn = connect()
     conn.execute(

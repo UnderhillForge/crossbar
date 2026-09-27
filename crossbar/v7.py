@@ -1341,7 +1341,10 @@ def _cmd_claim(sess: Session, args: list[str]) -> str:
     code = args[0].upper()
     known = {"BEC-GUEST", "BEC-SYS", "BEC-ROOT", "BEC-USERADD", "BEC-MF"}
     if code not in known:
-        return "claim: not found\r\n"
+        # Event flags are chain claims. Local stamps stay the names above.
+        from crossbar.commands import perform_claim
+
+        return perform_claim(sess, args[0])
     allowed = (
         (code == "BEC-GUEST" and sess.v7_user == "guest")
         or (code == "BEC-SYS" and sess.v7_uid == 3)
