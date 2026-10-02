@@ -79,6 +79,37 @@ class AdminTests(unittest.TestCase):
         self.assertIn("host-state", audit)
         self.assertIn("adaops", audit)
 
+        from crossbar.accounts import create_account, get_account
+        from crossbar import mail as pad_mail
+
+        if get_account("bobmail") is None:
+            create_account("bobmail", "secret12", "bobmail@example.com")
+        mail_page = client.get("/o/mail")
+        self.assertEqual(mail_page.status_code, 200)
+        self.assertIn("broadcast as sysop", mail_page.text)
+        csrf_mail = re.search(r'name="csrf" value="([^"]+)"', mail_page.text)
+        self.assertIsNotNone(csrf_mail)
+        assert csrf_mail is not None
+        broadcast = client.post(
+            "/o/mail",
+            data={
+                "csrf": csrf_mail.group(1),
+                "subject": "pad notice",
+                "body": "hello from console",
+                "audience": "handles",
+                "handles": "bobmail nobody",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(broadcast.status_code, 200)
+        self.assertIn("sent 1, skipped 1", broadcast.text)
+        rows = pad_mail.list_letters("bobmail")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].sender, "sysop")
+        self.assertEqual(rows[0].kind, "broadcast")
+        audit2 = Path(os.environ["CROSSBAR_ADMIN_AUDIT"]).read_text(encoding="utf-8")
+        self.assertIn("mail-broadcast", audit2)
+
         watch = client.post(
             "/o/config",
             data={

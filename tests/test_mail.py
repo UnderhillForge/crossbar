@@ -217,6 +217,63 @@ class MailApiTests(unittest.TestCase):
         self.assertIn("deleted 1", deleted)
         self.assertIsNone(mail.get_letter("bob", mid))
 
+    def test_reply_forward_archive_and_unread_notice(self) -> None:
+        from crossbar.session import SESSIONS, get_session
+        from crossbar.ws import push
+
+        SESSIONS.clear()
+        mid = mail.send(sender="ada", to="bob", subject="hello", body="hi bob")
+        bob = get_session("mail-bob2")
+        bob.user = "bob"
+        bob.host = "grayline"
+        bob.phase = "shell"
+        started = push(bob, f"mail reply {mid}\r")
+        self.assertIn("Compose to ada", started)
+        self.assertEqual(bob.phase, "mail_body")
+        self.assertTrue(any(line.startswith(">") for line in bob.mail_body_lines))
+        done = push(bob, "thanks\r.\r")
+        self.assertIn("sent ", done)
+        reply_id = mail.list_letters("ada")[0].id
+        reply = mail.get_letter("ada", reply_id)
+        assert reply is not None
+        self.assertEqual(reply.in_reply_to, mid)
+        self.assertTrue(reply.subject.lower().startswith("re:"))
+
+        sent_copy = mail.list_letters("bob", "sent")[0]
+        self.assertIn(
+            "cannot reply to this letter",
+            push(bob, f"mail reply {sent_copy.id}\r"),
+        )
+
+        fwd = push(bob, f"mail fwd {mid} carol\r")
+        self.assertIn("Compose to carol", fwd)
+        push(bob, ".\r")
+        carol_letter = mail.list_letters("carol")[0]
+        self.assertIsNone(carol_letter.in_reply_to)
+        self.assertTrue(carol_letter.subject.lower().startswith("fwd:"))
+
+        unread_mid = mail.send(sender="ada", to="bob", subject="later", body="ping")
+        self.assertEqual(mail.unread_count("bob"), 1)
+        self.assertTrue(mail.archive("bob", unread_mid))
+        self.assertEqual(mail.unread_count("bob"), 0)
+        self.assertEqual(len(mail.list_letters("bob", "archive")), 1)
+
+        from crossbar.commands import _arrived
+
+        bob.user = "bob"
+        arrived = _arrived(bob)
+        self.assertNotIn("new letter", arrived)
+        mail.send(sender="ada", to="bob", subject="again", body="yo")
+        arrived = _arrived(bob)
+        self.assertIn("You have 1 new letter.", arrived)
+
+        mail.broadcast(subject="maint", body="window", handles=["bob"])
+        sys_letter = [row for row in mail.list_letters("bob") if row.sender == "sysop"][0]
+        self.assertIn(
+            "sysop is not accepting mail",
+            push(bob, f"mail reply {sys_letter.id}\r"),
+        )
+
     def test_wall_posts_last_ten(self) -> None:
         from crossbar import wall
         from crossbar.session import SESSIONS, get_session

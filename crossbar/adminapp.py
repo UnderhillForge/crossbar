@@ -7,6 +7,7 @@ import os
 import shutil
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 from starlette.applications import Starlette
@@ -752,9 +753,73 @@ async def mail_get(request: Request) -> Response:
     who = _need(request)
     if isinstance(who, Response):
         return who
-    allow = "<br>".join(_esc(item) for item in site.news_allow()) or "—"
-    body = f"<p>NNTP upstream: not configured</p><p>allowlist:<br>{allow}</p>"
-    return HTMLResponse(_page("Mail", body, who))
+    from crossbar import mail
+
+    flash = request.query_params.get("flash") or ""
+    flash_html = f"<p><strong>{_esc(flash)}</strong></p>" if flash else ""
+    conn = accounts_connect()
+    totals = conn.execute("SELECT COUNT(*) AS n FROM mail_messages").fetchone()
+    unread = conn.execute(
+        "SELECT COUNT(*) AS n FROM mail_copies "
+        "WHERE deleted = 0 AND folder = 'inbox' AND read_at IS NULL"
+    ).fetchone()
+    last = conn.execute(
+        "SELECT created, subject FROM mail_messages WHERE kind = 'broadcast' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    last_line = "—"
+    if last is not None:
+        last_line = f"{_esc(last['created'])} · {_esc(last['subject'] or '(no subject)')}"
+    stats = (
+        f"<p>messages: {_esc(totals['n'] if totals else 0)} · "
+        f"unread inbox copies: {_esc(unread['n'] if unread else 0)}</p>"
+        f"<p>last broadcast: {last_line}</p>"
+    )
+    form = f"""{flash_html}{stats}
+<form method="post" action="/o/mail">{_csrf_field(who[2])}
+<p>Subject <input name="subject" maxlength="60" style="width:28rem"></p>
+<p>Body</p><textarea name="body" maxlength="4000"></textarea>
+<p>
+<label><input type="radio" name="audience" value="all" checked> all ok accounts</label><br>
+<label><input type="radio" name="audience" value="handles"> handles
+<input name="handles" placeholder="ada bob carol" style="width:20rem"></label>
+</p>
+<button>broadcast as sysop</button></form>
+<p class="who">From: sysop · pad-local only · NNTP upstream: not configured</p>"""
+    return HTMLResponse(_page("Mail", form, who))
+
+
+async def mail_post(request: Request) -> Response:
+    who = _need(request, write=True)
+    if isinstance(who, Response):
+        return who
+    form = await request.form()
+    if not _form_ok(request, form, who):
+        return PlainTextResponse("403\n", status_code=403)
+    from crossbar import mail
+
+    subject = str(form.get("subject") or "")
+    body = str(form.get("body") or "")
+    audience = str(form.get("audience") or "all").strip().lower()
+    handles_raw = str(form.get("handles") or "")
+    handles: list[str] | None = None
+    if audience == "handles":
+        handles = [
+            part.strip().lower()
+            for part in handles_raw.replace(",", " ").split()
+            if part.strip()
+        ]
+    try:
+        sent, skipped = mail.broadcast(subject=subject, body=body, handles=handles)
+    except mail.NoRecipientsError as exc:
+        flash = f"no recipients (skipped {exc.skipped})"
+        return RedirectResponse(f"/o/mail?flash={quote(flash)}", status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(f"/o/mail?flash={quote(str(exc))}", status_code=303)
+    detail = f"n={sent} skipped={skipped} {(subject or '(no subject)')[:40]}"
+    audit(who[0], "mail-broadcast", detail, _client_ip(request))
+    flash = f"sent {sent}, skipped {skipped}"
+    return RedirectResponse(f"/o/mail?flash={quote(flash)}", status_code=303)
 
 
 async def audit_get(request: Request) -> Response:
@@ -864,6 +929,7 @@ def build_admin_app() -> Starlette:
         Route("/o/chain", chain_get, methods=["GET"]),
         Route("/o/chain", chain_post, methods=["POST"]),
         Route("/o/mail", mail_get, methods=["GET"]),
+        Route("/o/mail", mail_post, methods=["POST"]),
         Route("/o/audit", audit_get, methods=["GET"]),
         Route("/o/config", config_get, methods=["GET"]),
         Route("/o/config", config_post, methods=["POST"]),
