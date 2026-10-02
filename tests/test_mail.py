@@ -215,17 +215,18 @@ class MailApiTests(unittest.TestCase):
         self.assertEqual(ada.phase, "mail_body")
         done = push(ada, "line one\r.\r")
         self.assertIn("sent ", done)
-        self.assertTrue(done.endswith("bob@grayline/main> ") or "sent" in done)
+        self.assertEqual(ada.phase, "mail")
+        self.assertIn("/mail>", done)
         listing = push(bob, "mail\r")
         self.assertIn("hello there", listing)
         self.assertIn("1 unread", listing)
-        # extract id from list line
+        self.assertEqual(bob.phase, "mail")
         mid = mail.list_letters("bob")[0].id
-        read = push(bob, f"mail read {mid}\r")
+        read = push(bob, f"r {mid}\r")
         self.assertIn("From: ada", read)
         self.assertIn("line one", read)
         self.assertEqual(mail.unread_count("bob"), 0)
-        deleted = push(bob, f"mail del {mid}\r")
+        deleted = push(bob, f"d {mid}\r")
         self.assertIn("deleted 1", deleted)
         self.assertIsNone(mail.get_letter("bob", mid))
 

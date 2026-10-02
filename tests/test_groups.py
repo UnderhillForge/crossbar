@@ -142,7 +142,8 @@ class GroupsApiTests(unittest.TestCase):
         ada.host = "grayline"
         ada.phase = "shell"
         shown = push(ada, "groups new\r")
-        self.assertIn("GROUPS NEW", shown)
+        self.assertIn("NEW  (unread)", shown)
+        self.assertIn("/groups>", shown)
         self.assertIn("grayline.general", shown)
         self.assertIn("catch me", shown)
         self.assertIn("grayline.doors", shown)
@@ -169,16 +170,19 @@ class GroupsApiTests(unittest.TestCase):
         ada.phase = "shell"
         listed = push(ada, "groups\r")
         self.assertIn("grayline.general", listed)
-        selected = push(ada, "groups grayline.general\r")
+        self.assertEqual(ada.phase, "groups")
+        self.assertIn("/groups>", listed)
+        selected = push(ada, "g grayline.general\r")
         self.assertIn("Group grayline.general", selected)
-        started = push(ada, "groups post hello world\r")
+        started = push(ada, "p hello world\r")
         self.assertIn("Compose to grayline.general", started)
         self.assertEqual(ada.phase, "group_body")
         done = push(ada, "line one\r.\r")
         self.assertIn("posted 1 to grayline.general", done)
-        headers = push(ada, "groups headers\r")
+        self.assertEqual(ada.phase, "groups")
+        headers = push(ada, "headers\r")
         self.assertIn("hello world", headers)
-        read = push(ada, "groups read 1\r")
+        read = push(ada, "r 1\r")
         self.assertIn("From: ada", read)
         self.assertIn("line one", read)
         self.assertIn("Message-ID:", read)
@@ -187,9 +191,12 @@ class GroupsApiTests(unittest.TestCase):
         guest.host = "grayline"
         guest.phase = "shell"
         push(guest, "groups grayline.general\r")
-        self.assertIn("logon required", push(guest, "groups post\r"))
-        push(ada, "groups grayline.sysop\r")
-        self.assertIn("sysop only", push(ada, "groups post\r"))
+        self.assertIn("logon required", push(guest, "p\r"))
+        push(ada, "g grayline.sysop\r")
+        self.assertIn("sysop only", push(ada, "p\r"))
+        quit_out = push(ada, "q\r")
+        self.assertIn("returned to pad", quit_out)
+        self.assertEqual(ada.phase, "shell")
 
 
 if __name__ == "__main__":

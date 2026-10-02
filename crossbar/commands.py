@@ -27,7 +27,7 @@ from crossbar.accounts import (
     wallet_of,
     wallet_owner,
 )
-from crossbar.config import MAX_HISTORY
+from crossbar.config import MAX_HISTORY, SYSTEM_NAME
 from crossbar.lobby import (
     LOGIN_LINE,
     MOTD_LINE,
@@ -58,8 +58,8 @@ _HELP_TOPICS = {
     "date": "pad clock",
     "motd": "message of the day",
     "news": "pad bulletin",
-    "mail": "letters: list read send reply fwd del archive",
-    "groups": "forums: list new headers read post next",
+    "mail": "mail app: MAIL enters; q quits",
+    "groups": "groups app: GROUPS enters; q quits",
     "wall": "last 10 wall lines; write one line",
     "full": "baud, handle, destination",
     "status": "baud, handle, destination",
@@ -243,6 +243,10 @@ def cmd_date(sess: Session, args: list[str]) -> str:
 
 def cmd_clear(sess: Session, args: list[str]) -> str:
     """Wipe the terminal; submit() still appends the pad prompt."""
+    return _cls()
+
+
+def _cls() -> str:
     return "\x1b[2J\x1b[H"
 
 
@@ -325,17 +329,18 @@ def _mail_when(created: str) -> str:
 
 def _mail_help() -> str:
     return (
-        "MAIL                 inbox summary\r\n"
-        "MAIL LIST [folder]   inbox | sent | archive\r\n"
-        "MAIL READ <id>\r\n"
-        "MAIL SEND <handle> [subject…]\r\n"
-        "MAIL REPLY <id>\r\n"
-        "MAIL FWD <id> <handle>\r\n"
-        "MAIL DEL <id>…\r\n"
-        "MAIL ARCHIVE <id>…\r\n"
-        "MAIL HELP\r\n"
-        "Compose ends with . alone. Q or ^C cancels.\r\n"
-        "Blank subject is allowed → (no subject).\r\n"
+        "MAIL app  (prompt path /mail)\r\n"
+        "  <enter>           refresh inbox\r\n"
+        "  l [folder]        list inbox|sent|archive\r\n"
+        "  r <id>            read\r\n"
+        "  s <handle> [subj] send\r\n"
+        "  re <id>           reply\r\n"
+        "  f <id> <handle>   forward\r\n"
+        "  d <id>…           delete\r\n"
+        "  a <id>…           archive\r\n"
+        "  h                 help\r\n"
+        "  q                 quit to pad\r\n"
+        "Compose: . alone ends; Q or ^C cancels.\r\n"
     )
 
 
@@ -398,24 +403,40 @@ def _mail_list(sess: Session, folder: str) -> str:
 
     folder = (folder or "inbox").lower()
     if folder not in {"inbox", "sent", "archive"}:
-        return "usage: MAIL LIST [inbox|sent|archive]\r\n"
+        return "usage: l [inbox|sent|archive]\r\n"
     rows = mail.list_letters(sess.user or "", folder)
     unread = mail.unread_count(sess.user or "")
-    inbox_n = len(mail.list_letters(sess.user or "", "inbox"))
     lines = [
-        f"MAILBOX  {sess.user}  ·  {unread} unread  ·  {inbox_n} inbox",
+        f"─ {folder} ─  {sess.user}  ·  {unread} unread",
         " ID   FROM         WHEN         SUBJECT",
     ]
     if not rows:
         lines.append("(empty)")
     for letter in rows:
         who = letter.sender if folder != "sent" else letter.to_list
+        mark = "*" if folder == "inbox" and letter.read_at is None else " "
         lines.append(
-            f" {letter.id:<4} {who:<12} {_mail_when(letter.created):<12} "
+            f"{mark}{letter.id:<4} {who:<12} {_mail_when(letter.created):<12} "
             f"{_mail_subject_shown(letter.subject)}"
         )
-    lines.append("Type MAIL READ <id>  ·  MAIL HELP for verbs")
+    lines.append("r <id>  ·  h help  ·  q quit")
     return "\r\n".join(lines) + "\r\n"
+
+
+def _mail_dashboard(sess: Session) -> str:
+    from crossbar import mail
+
+    unread = mail.unread_count(sess.user or "")
+    lines = [
+        "┌─ MAIL ──────────────────────────────────────",
+        f"│  {sess.user}@{SYSTEM_NAME}/mail",
+        f"│  {unread} unread",
+        "└─────────────────────────────────────────────",
+        "",
+    ]
+    body = _mail_list(sess, "inbox")
+    # Drop the trailing help line's redundancy — list already has chrome.
+    return _cls() + "\r\n".join(lines) + body
 
 
 def _mail_read(sess: Session, letter_id: int) -> str:
@@ -426,7 +447,7 @@ def _mail_read(sess: Session, letter_id: int) -> str:
         return "no such letter\r\n"
     mail.mark_read(sess.user or "", letter_id)
     body = letter.body.replace("\n", "\r\n")
-    return (
+    return _cls() + (
         f"Letter {letter.id}\r\n"
         f"From: {letter.sender}\r\n"
         f"To:   {letter.to_list}\r\n"
@@ -435,8 +456,8 @@ def _mail_read(sess: Session, letter_id: int) -> str:
         "────────────────────────────────────────\r\n"
         f"{body}\r\n"
         "────────────────────────────────────────\r\n"
-        f"REPLY {letter.id}  ·  FWD {letter.id} <handle>  ·  "
-        f"DEL {letter.id}  ·  ARCHIVE {letter.id}\r\n"
+        f"re {letter.id}  ·  f {letter.id} <handle>  ·  "
+        f"d {letter.id}  ·  a {letter.id}  ·  q quit\r\n"
     )
 
 
@@ -532,8 +553,14 @@ def _mail_finish_send(sess: Session) -> str:
         return f"{exc}\r\n"
     finally:
         _clear_mail_draft(sess)
-        sess.phase = "shell"
+        sess.phase = "mail"
     return f"sent {mid} to {to}\r\n"
+
+
+def _mail_cancel_compose(sess: Session) -> str:
+    _clear_mail_draft(sess)
+    sess.phase = "mail"
+    return "cancelled\r\n"
 
 
 def mail_line(sess: Session, raw: str) -> str:
@@ -541,9 +568,7 @@ def mail_line(sess: Session, raw: str) -> str:
     if sess.phase == "mail_subject":
         stripped = text.strip()
         if stripped.upper() == "Q":
-            _clear_mail_draft(sess)
-            sess.phase = "shell"
-            return "cancelled\r\n"
+            return _mail_cancel_compose(sess)
         sess.mail_subject = stripped.replace("\x00", "")
         from crossbar import mail
 
@@ -558,9 +583,7 @@ def mail_line(sess: Session, raw: str) -> str:
     if sess.phase == "mail_body":
         stripped = text.strip()
         if stripped.upper() == "Q":
-            _clear_mail_draft(sess)
-            sess.phase = "shell"
-            return "cancelled\r\n"
+            return _mail_cancel_compose(sess)
         if stripped == ".":
             return _mail_finish_send(sess)
         from crossbar import mail
@@ -571,37 +594,30 @@ def mail_line(sess: Session, raw: str) -> str:
             return "body too long\r\n"
         sess.mail_body_lines.append(text.rstrip("\r\n"))
         return ""
-    sess.phase = "shell"
-    _clear_mail_draft(sess)
-    return ""
+    return mail_mode_line(sess, raw)
 
 
-def cmd_mail(sess: Session, args: list[str]) -> str:
-    blocked = _mail_gate(sess)
-    if blocked:
-        return blocked
-    if not args:
-        return _mail_list(sess, "inbox")
+def _mail_dispatch(sess: Session, args: list[str]) -> str:
     verb = args[0].lower()
     rest = args[1:]
-    if verb in {"help", "?"}:
+    if verb in {"help", "?", "h"}:
         return _mail_help()
-    if verb == "list":
+    if verb in {"list", "l", "ls"}:
         folder = rest[0] if rest else "inbox"
-        return _mail_list(sess, folder)
-    if verb == "read":
+        return _cls() + _mail_list(sess, folder)
+    if verb in {"read", "r"}:
         if len(rest) != 1 or not rest[0].isdigit():
-            return "usage: MAIL READ <id>\r\n"
+            return "usage: r <id>\r\n"
         return _mail_read(sess, int(rest[0]))
-    if verb == "send":
+    if verb in {"send", "s"}:
         if not rest:
-            return "usage: MAIL SEND <handle> [subject]\r\n"
+            return "usage: s <handle> [subject]\r\n"
         to = rest[0]
         subject = " ".join(rest[1:]) if len(rest) > 1 else None
         return _mail_begin_send(sess, to, subject)
-    if verb in {"del", "delete", "rm"}:
+    if verb in {"del", "delete", "rm", "d"}:
         if not rest or not all(tok.isdigit() for tok in rest):
-            return "usage: MAIL DEL <id>…\r\n"
+            return "usage: d <id>…\r\n"
         from crossbar import mail
 
         removed = 0
@@ -611,19 +627,44 @@ def cmd_mail(sess: Session, args: list[str]) -> str:
         if removed == 0:
             return "no such letter\r\n"
         return f"deleted {removed}\r\n"
-    if verb == "reply":
+    if verb in {"reply", "re"}:
         if len(rest) != 1 or not rest[0].isdigit():
-            return "usage: MAIL REPLY <id>\r\n"
+            return "usage: re <id>\r\n"
         return _mail_reply(sess, int(rest[0]))
-    if verb in {"fwd", "forward"}:
+    if verb in {"fwd", "forward", "f"}:
         if len(rest) != 2 or not rest[0].isdigit():
-            return "usage: MAIL FWD <id> <handle>\r\n"
+            return "usage: f <id> <handle>\r\n"
         return _mail_fwd(sess, int(rest[0]), rest[1])
-    if verb == "archive":
+    if verb in {"archive", "a"}:
         if not rest or not all(tok.isdigit() for tok in rest):
-            return "usage: MAIL ARCHIVE <id>…\r\n"
+            return "usage: a <id>…\r\n"
         return _mail_archive(sess, rest)
-    return "usage: MAIL HELP\r\n"
+    if verb in {"q", "quit", "bye", "exit"}:
+        sess.phase = "shell"
+        return _cls() + "returned to pad\r\n"
+    return "unknown — h for help, q to quit\r\n"
+
+
+def mail_mode_line(sess: Session, raw: str) -> str:
+    text = raw.strip()
+    if not text:
+        return _mail_dashboard(sess)
+    parts = text.split()
+    if parts and parts[0].lower() == "mail":
+        parts = parts[1:]
+        if not parts:
+            return _mail_dashboard(sess)
+    return _mail_dispatch(sess, parts)
+
+
+def cmd_mail(sess: Session, args: list[str]) -> str:
+    blocked = _mail_gate(sess)
+    if blocked:
+        return blocked
+    sess.phase = "mail"
+    if not args:
+        return _mail_dashboard(sess)
+    return _mail_dispatch(sess, args)
 
 
 def _wall_when(created: str) -> str:
@@ -665,15 +706,17 @@ def _clear_group_draft(sess: Session) -> None:
 
 def _groups_help() -> str:
     return (
-        "GROUPS                 list groups\r\n"
-        "GROUPS LIST            same\r\n"
-        "GROUPS NEW             unread since you last read\r\n"
-        "GROUPS <name>          select a group\r\n"
-        "GROUPS HEADERS [n]     recent headers (default 20)\r\n"
-        "GROUPS READ <n>        read article number\r\n"
-        "GROUPS NEXT / PREV     move in current group\r\n"
-        "GROUPS POST [subject]  post to current group\r\n"
-        "GROUPS HELP\r\n"
+        "GROUPS app  (prompt path /groups)\r\n"
+        "  <enter>           refresh group list\r\n"
+        "  l                 list groups\r\n"
+        "  n                 unread (GROUPS NEW)\r\n"
+        "  g <name>          select group\r\n"
+        "  headers [n]       headers in current group\r\n"
+        "  r <n>             read article\r\n"
+        "  next / prev       move in current group\r\n"
+        "  p [subject]       post\r\n"
+        "  h                 help\r\n"
+        "  q                 quit to pad\r\n"
         "NEWS is the system bulletin; GROUPS are forums.\r\n"
     )
 
@@ -687,11 +730,12 @@ def _groups_list(sess: Session) -> str:
     from crossbar import groups
 
     rows = groups.list_groups(for_handle=sess.user or "")
-    lines = ["GROUPS"]
+    lines = [
+        f"{'name':<22} {'high':>4} {'new':>4}  description",
+    ]
     if not rows:
         lines.append("(none)")
     else:
-        lines.append(f"{'name':<22} {'high':>4} {'new':>4}  description")
         for row in rows:
             unread = row.unread if sess.user and sess.user != "guest" else 0
             lines.append(
@@ -699,8 +743,21 @@ def _groups_list(sess: Session) -> str:
             )
     if sess.group_name:
         lines.append(f"current: {sess.group_name}")
-    lines.append("GROUPS HELP for verbs")
+    lines.append("g <name>  ·  n new  ·  h help  ·  q quit")
     return "\r\n".join(lines) + "\r\n"
+
+
+def _groups_dashboard(sess: Session) -> str:
+    who = sess.user or "guest"
+    current = sess.group_name or "(none)"
+    lines = [
+        "┌─ GROUPS ────────────────────────────────────",
+        f"│  {who}@{SYSTEM_NAME}/groups",
+        f"│  current: {current}",
+        "└─────────────────────────────────────────────",
+        "",
+    ]
+    return _cls() + "\r\n".join(lines) + _groups_list(sess)
 
 
 def _groups_select(sess: Session, name: str) -> str:
@@ -711,10 +768,10 @@ def _groups_select(sess: Session, name: str) -> str:
         return "no such group\r\n"
     sess.group_name = info.name
     sess.group_art = info.high
-    return (
+    return _cls() + (
         f"Group {info.name} ({info.description})\r\n"
         f"articles: {info.high}  policy: {info.post_policy}\r\n"
-        "GROUPS HEADERS · GROUPS READ <n> · GROUPS POST\r\n"
+        "headers · r <n> · p [subj] · next · q quit\r\n"
     )
 
 
@@ -737,7 +794,8 @@ def _groups_headers(sess: Session, limit: int | None) -> str:
                 f"{row.number:>4}  {_wall_when(row.date_sent)}  "
                 f"{row.from_handle:<12} {_groups_subject_shown(row.subject)}"
             )
-    return "\r\n".join(lines) + "\r\n"
+    lines.append("r <n>  ·  next  ·  p  ·  q quit")
+    return _cls() + "\r\n".join(lines) + "\r\n"
 
 
 def _groups_new(sess: Session) -> str:
@@ -746,10 +804,10 @@ def _groups_new(sess: Session) -> str:
     if not sess.user or sess.user == "guest" or get_account(sess.user) is None:
         return "logon required\r\n"
     rows = groups.unread_headers(sess.user)
-    lines = ["GROUPS NEW  (unread)"]
+    lines = ["NEW  (unread)"]
     if not rows:
         lines.append("(no new articles)")
-        return "\r\n".join(lines) + "\r\n"
+        return _cls() + "\r\n".join(lines) + "\r\n"
     current = ""
     for group_name, row in rows:
         if group_name != current:
@@ -759,8 +817,8 @@ def _groups_new(sess: Session) -> str:
             f"{row.number:>4}  {_wall_when(row.date_sent)}  "
             f"{row.from_handle:<12} {_groups_subject_shown(row.subject)}"
         )
-    lines.append("GROUPS <name> then GROUPS READ <n>")
-    return "\r\n".join(lines) + "\r\n"
+    lines.append("g <name>  ·  r <n>  ·  q quit")
+    return _cls() + "\r\n".join(lines) + "\r\n"
 
 
 def _groups_show_article(sess: Session, article) -> str:
@@ -770,7 +828,7 @@ def _groups_show_article(sess: Session, article) -> str:
     if sess.user and sess.user != "guest":
         groups.mark_read(sess.user, article.group_name, article.number)
     body = article.body.replace("\n", "\r\n")
-    return (
+    return _cls() + (
         f"Article {article.number} in {article.group_name}\r\n"
         f"From: {article.from_handle}\r\n"
         f"Date: {_wall_when(article.date_sent)}\r\n"
@@ -778,6 +836,8 @@ def _groups_show_article(sess: Session, article) -> str:
         f"Message-ID: {article.message_id}\r\n"
         "────────────────────────────────────────\r\n"
         f"{body}\r\n"
+        "────────────────────────────────────────\r\n"
+        "next · prev · p · q quit\r\n"
     )
 
 
@@ -852,11 +912,17 @@ def _groups_finish_post(sess: Session) -> str:
         return f"{exc}\r\n"
     finally:
         _clear_group_draft(sess)
-        sess.phase = "shell"
+        sess.phase = "groups"
     sess.group_art = number
     if sess.user and sess.user != "guest":
         groups.mark_read(sess.user, group, number)
     return f"posted {number} to {group}\r\n"
+
+
+def _groups_cancel_compose(sess: Session) -> str:
+    _clear_group_draft(sess)
+    sess.phase = "groups"
+    return "cancelled\r\n"
 
 
 def group_line(sess: Session, raw: str) -> str:
@@ -864,9 +930,7 @@ def group_line(sess: Session, raw: str) -> str:
     if sess.phase == "group_subject":
         stripped = text.strip()
         if stripped.upper() == "Q":
-            _clear_group_draft(sess)
-            sess.phase = "shell"
-            return "cancelled\r\n"
+            return _groups_cancel_compose(sess)
         sess.group_subject = stripped
         sess.phase = "group_body"
         return (
@@ -875,16 +939,10 @@ def group_line(sess: Session, raw: str) -> str:
         )
     if sess.phase == "group_body":
         stripped = text.strip()
-        if stripped.upper() == "Q" and not sess.group_body_lines:
-            _clear_group_draft(sess)
-            sess.phase = "shell"
-            return "cancelled\r\n"
+        if stripped.upper() == "Q":
+            return _groups_cancel_compose(sess)
         if stripped == ".":
             return _groups_finish_post(sess)
-        if stripped.upper() == "Q":
-            _clear_group_draft(sess)
-            sess.phase = "shell"
-            return "cancelled\r\n"
         from crossbar import groups as groups_mod
 
         tentative = sess.group_body_lines + [text.rstrip("\r\n")]
@@ -894,44 +952,68 @@ def group_line(sess: Session, raw: str) -> str:
             return "body too long\r\n"
         sess.group_body_lines.append(text.rstrip("\r\n"))
         return ""
-    return ""
+    return groups_mode_line(sess, raw)
 
 
-def cmd_groups(sess: Session, args: list[str]) -> str:
-    if sess.host != "grayline":
-        return "groups: not found\r\n"
-    if not args or args[0].lower() in {"list", "ls"}:
-        return _groups_list(sess)
+def _groups_dispatch(sess: Session, args: list[str]) -> str:
     verb = args[0].lower()
     rest = args[1:]
-    if verb in {"help", "?"}:
+    if verb in {"help", "?", "h"}:
         return _groups_help()
-    if verb == "new":
+    if verb in {"list", "l", "ls"}:
+        return _cls() + _groups_list(sess)
+    if verb in {"new", "n"}:
         return _groups_new(sess)
-    if verb == "group" and rest:
+    if verb in {"group", "g"} and rest:
         return _groups_select(sess, rest[0])
     if verb == "headers":
         limit = None
         if rest:
             if not rest[0].isdigit():
-                return "usage: GROUPS HEADERS [n]\r\n"
+                return "usage: headers [n]\r\n"
             limit = int(rest[0])
         return _groups_headers(sess, limit)
-    if verb == "read":
+    if verb in {"read", "r"}:
         if not rest or not rest[0].isdigit():
-            return "usage: GROUPS READ <n>\r\n"
+            return "usage: r <n>\r\n"
         return _groups_read(sess, int(rest[0]))
     if verb == "next":
         return _groups_next_prev(sess, "next")
     if verb in {"prev", "previous"}:
         return _groups_next_prev(sess, "prev")
-    if verb == "post":
+    if verb in {"post", "p"}:
         subject = " ".join(rest) if rest else None
         return _groups_begin_post(sess, subject)
-    # GROUPS grayline.general
+    if verb in {"q", "quit", "bye", "exit"}:
+        sess.phase = "shell"
+        sess.group_name = ""
+        sess.group_art = 0
+        return _cls() + "returned to pad\r\n"
+    # select by dotted name: grayline.general
     if "." in verb or verb.startswith("grayline"):
         return _groups_select(sess, args[0])
-    return "usage: GROUPS HELP\r\n"
+    return "unknown — h for help, q to quit\r\n"
+
+
+def groups_mode_line(sess: Session, raw: str) -> str:
+    text = raw.strip()
+    if not text:
+        return _groups_dashboard(sess)
+    parts = text.split()
+    if parts and parts[0].lower() == "groups":
+        parts = parts[1:]
+        if not parts:
+            return _groups_dashboard(sess)
+    return _groups_dispatch(sess, parts)
+
+
+def cmd_groups(sess: Session, args: list[str]) -> str:
+    if sess.host != "grayline":
+        return "groups: not found\r\n"
+    sess.phase = "groups"
+    if not args:
+        return _groups_dashboard(sess)
+    return _groups_dispatch(sess, args)
 
 
 def cmd_verify(sess: Session, args: list[str]) -> str:

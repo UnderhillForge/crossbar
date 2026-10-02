@@ -149,16 +149,28 @@ def push(sess: Session, data: str) -> str:
                 if sess.phase.startswith("profile"):
                     sess.phase = "shell"
                     sess.pending_password = ""
-                if sess.phase.startswith("mail"):
-                    from crossbar.commands import _clear_mail_draft
+                if sess.phase in {"mail_subject", "mail_body"}:
+                    from crossbar.commands import _mail_cancel_compose
 
-                    _clear_mail_draft(sess)
+                    out.append("^C\r\n" + _mail_cancel_compose(sess) + prompt_for(sess))
+                    continue
+                if sess.phase == "mail":
                     sess.phase = "shell"
-                elif sess.phase.startswith("group"):
-                    from crossbar.commands import _clear_group_draft
+                    out.append("^C\r\n\x1b[2J\x1b[Hreturned to pad\r\n" + prompt_for(sess))
+                    continue
+                if sess.phase in {"group_subject", "group_body"}:
+                    from crossbar.commands import _groups_cancel_compose
 
-                    _clear_group_draft(sess)
+                    out.append(
+                        "^C\r\n" + _groups_cancel_compose(sess) + prompt_for(sess)
+                    )
+                    continue
+                if sess.phase == "groups":
                     sess.phase = "shell"
+                    sess.group_name = ""
+                    sess.group_art = 0
+                    out.append("^C\r\n\x1b[2J\x1b[Hreturned to pad\r\n" + prompt_for(sess))
+                    continue
                 out.append("^C\r\n" + prompt_for(sess))
             continue
         if (
