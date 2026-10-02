@@ -50,7 +50,7 @@ Host state (UP, OFFLINE, MAINT) is stored in `data/site/runtime.json`. The pad H
 
 MOTD and the pad `?` text can be overridden in the same file. Pack text stays readable in Content. Edits land as overrides unless you are looking at a preview.
 
-Pad chrome under `data/text/`: prefer `name.ans` when the session has ANSI on and the file exists; otherwise `name.asc`. Covers welcome, menu_header, main_menu, prompt, motd, news. `.ans` may be CP437 with a SAUCE footer (stripped on load). Players toggle with `ANSI ON` / `ANSI OFF` (default ON for the web terminal).
+Pad chrome under `data/text/`: prefer `name.ans` when the session has ANSI on and the file exists; otherwise `name.asc`. Covers welcome, menu_header, main_menu, motd, news. The pad prompt stays `prompt.asc`. `.ans` may be CP437 with a SAUCE footer (stripped on load). Players toggle with `ANSI ON` / `ANSI OFF` (default ON for the web terminal).
 
 Granting a flag requires a reason and writes an audit line. Revoke removes the local stamp. The trigger text comes from `packs/big-evil/flags.yaml`.
 

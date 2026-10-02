@@ -137,7 +137,8 @@ def prompt_for(sess: Session) -> str:
         name = "mf" if sess.host == "bec-mf" else "bec"
         base = f"{name}{mark} "
         if sess.ansi_ok:
-            return f"\x1b[32m{base}\x1b[0m"
+            # Color the prompt; leave trailing space after reset for endswith checks.
+            return f"\x1b[32m{name}{mark}\x1b[0m "
         return base
     if sess.user is None:
         if sess.host in {"", "grayline"}:

@@ -8,12 +8,13 @@ Terminal chrome under data/text/:
   welcome.asc/.ans  public logon and return-to-pad
   menu_header.asc/.ans  header above help / ?
   main_menu.asc/.ans    editable command list for help / ?
-  prompt.asc/.ans       grayline pad prompt; [time] [user]@[host]/[path]>
+  prompt.asc            grayline pad prompt; [time] [user]@[host]/[path]>
   news.asc/.ans         local NEWS bulletin (NNTP later)
   motd.asc/.ans         message of the day
   wall.asc              WALL posts (append via WALL <text>; edit over SSH)
 
-When ANSI is on and a matching .ans exists, that file is used; otherwise .asc.
+When ANSI is on and a matching .ans exists, that file is used; otherwise .asc
+(welcome, menu_header, main_menu, motd, news). The pad prompt stays .asc.
 .ans is often CP437; SAUCE footers are stripped. Drop .ans beside .asc for color.
 """
 
@@ -117,10 +118,11 @@ def render_pad_prompt(
     *,
     ansi: bool = False,
 ) -> str:
-    """Fill prompt.ans/.asc. Trailing space from the file is kept."""
+    """Fill prompt.asc. Prompt stays monochrome so suffixes stay stable."""
+    del ansi  # reserved; use menu/welcome .ans for color
     clock = (when or datetime.now()).strftime("%H:%M:%S")
     handle = user or "guest"
-    text = load_chrome("prompt", ansi=ansi).rstrip("\r\n")
+    text = load_chrome("prompt", ansi=False).rstrip("\r\n")
     return (
         text.replace("[time]", clock)
         .replace("[user]", handle)

@@ -47,6 +47,12 @@ SECRET = "test-secret-for-crossbar"
 INDEX = ROOT / "static" / "index.html"
 
 
+def strip_sgr(text: str) -> str:
+    """Drop CSI SGR sequences for prompt suffix checks."""
+    import re
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
 def pad_prompt_end(user: str = "ada", path: str = "main") -> str:
     """Suffix of the configurable grayline prompt (time varies)."""
     return f"{user}@grayline/{path}> "
@@ -102,7 +108,7 @@ class CommandTests(unittest.TestCase):
         arrived = push(guest, "guest\r")
         self.assertIn("GUEST ACCEPTED", arrived)
         self.assertIn("CIRCUIT OPEN", arrived)
-        self.assertTrue(arrived.endswith(pad_prompt_end("guest")))
+        self.assertTrue(strip_sgr(arrived).endswith(pad_prompt_end("guest")))
         self.assertEqual(guest.user, "guest")
         self.assertIsNone(get_account("guest"))
 
@@ -128,7 +134,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(fresh.user, "ada")
         self.assertIn("IDENTITY  ada", done)
         self.assertIn("CIRCUIT OPEN", done)
-        self.assertTrue(done.endswith(pad_prompt_end("ada")))
+        self.assertTrue(strip_sgr(done).endswith(pad_prompt_end("ada")))
         account = get_account("ada")
         self.assertIsNotNone(account)
         assert account is not None
@@ -146,7 +152,7 @@ class CommandTests(unittest.TestCase):
         good = push(again, "secret12\r")
         self.assertEqual(again.user, "ada")
         self.assertIn("IDENTITY  ada", good)
-        self.assertTrue(good.endswith(pad_prompt_end("ada")))
+        self.assertTrue(strip_sgr(good).endswith(pad_prompt_end("ada")))
         self.assertTrue(authenticate("ada", "secret12"))
         self.assertFalse(authenticate("sysop", "secret12"))
         self.assertFalse(authenticate("admin", "secret12"))
@@ -175,7 +181,7 @@ class CommandTests(unittest.TestCase):
         out = push(sess, "help\r")
         self.assertIn("help\r\n", out)
         self.assertIn("WHO", out)
-        self.assertTrue(out.endswith(pad_prompt_end()))
+        self.assertTrue(strip_sgr(out).endswith(pad_prompt_end()))
 
     def test_backspace_in_one_chunk_runs_the_edited_command(self) -> None:
         sess = get_session("sid-bs2")
@@ -283,7 +289,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(sess.host, "grayline")
         self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", home)
         self.assertIn("CIRCUIT OPEN", home)
-        self.assertTrue(home.endswith(pad_prompt_end("ada")))
+        self.assertTrue(strip_sgr(home).endswith(pad_prompt_end("ada")))
 
         direct = push(sess, "connect ta\r")
         self.assertIn("NO CARRIER", direct)
@@ -314,7 +320,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(sess.line, "hosts ")
         sess.line = ""
         many = push(sess, "\t")
-        self.assertIn(pad_prompt_end("ada"), many)
+        self.assertIn(pad_prompt_end("ada"), strip_sgr(many))
         self.assertIn("connect", many)
         self.assertIn("bec", many)
         self.assertNotIn("hank", many)
@@ -379,7 +385,7 @@ class CommandTests(unittest.TestCase):
         guest = push(sess, "guest\r")
         self.assertIn("[1200]", guest)
         self.assertIn("Hank is gone", guest)
-        self.assertTrue(guest.endswith("bec$ "))
+        self.assertTrue(strip_sgr(guest).endswith("bec$ "))
         bin_names = push(sess, "ls /bin\r").split()
         for name in ("sh", "ls", "cat", "chmod", "ed", "stty", "sync"):
             self.assertIn(name, bin_names)
@@ -417,7 +423,7 @@ class CommandTests(unittest.TestCase):
         self.assertIn("cannot open", push(sess, "cat /usr/games/fortune\r"))
         self.assertTrue(push(sess, "su sys\r").endswith("Password:"))
         become = push(sess, "sys\r")
-        self.assertTrue(become.endswith("bec$ ") or become.endswith("\x1b[0m"))
+        self.assertTrue(strip_sgr(become).endswith("bec$ "))
         self.assertIn("\r\nsys\r\n", push(sess, "whoami\r"))
         fortune = push(sess, "cat /usr/games/fortune\r")
         secret = ""
@@ -428,7 +434,7 @@ class CommandTests(unittest.TestCase):
         self.assertIn("ttyh0", push(sess, "cat /usr/sys/mf.note\r"))
         self.assertTrue(push(sess, "su root\r").endswith("Password:"))
         rooted = push(sess, secret + "\r")
-        self.assertTrue(rooted.endswith("bec# ") or rooted.endswith("\x1b[0m"))
+        self.assertTrue(strip_sgr(rooted).endswith("bec# "))
         self.assertIn("\r\nroot\r\n", push(sess, "whoami\r"))
         self.assertIn("ada", push(sess, "useradd ada\r"))
         self.assertIn("ada:", push(sess, "cat /etc/passwd\r"))
@@ -448,7 +454,7 @@ class CommandTests(unittest.TestCase):
         self.assertIn("NO CARRIER", left)
         self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", left)
         self.assertIn("CIRCUIT OPEN", left)
-        self.assertTrue(left.endswith(pad_prompt_end("ada")))
+        self.assertTrue(strip_sgr(left).endswith(pad_prompt_end("ada")))
         self.assertEqual(sess.baud_now, T1_BAUD)
         smoke = (ROOT / "scripts" / "smoke-bec.md").read_text(encoding="utf-8")
         self.assertNotIn(secret, smoke)
@@ -526,21 +532,21 @@ class CommandTests(unittest.TestCase):
         sess.host = "grayline"
         v7.enter(sess)
         logged = push(sess, "guest\r")
-        self.assertTrue(logged.endswith("bec$ "))
+        self.assertTrue(strip_sgr(logged).endswith("bec$ "))
         year = str(__import__("datetime").datetime.now().year)
 
         def ran(cmd: str) -> str:
             out = push(sess, cmd + "\r")
             self.assertNotIn("\r\n?\r\n", out)
             self.assertFalse(out.endswith("?\r\n"))
-            self.assertTrue(out.endswith("bec$ "), out)
+            self.assertTrue(strip_sgr(out).endswith("bec$ "), out)
             return out
 
         self.assertIn(year, ran("date"))
         self.assertIn("BEC", ran("uname"))
         self.assertIn("usage:", ran("uname -z"))
         self.assertEqual(sess.v7_status, 1)
-        self.assertTrue(ran("cd /").endswith("bec$ "))
+        self.assertTrue(strip_sgr(ran("cd /")).endswith("bec$ "))
         self.assertIn("\r\n/\r\n", ran("pwd"))
         self.assertIn("PDP-11", ran("file /bin/ls"))
         self.assertIn("ascii text", ran("file /etc/motd"))
@@ -556,7 +562,7 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(asked.endswith("Password:"))
         stopped = push(sess, "\x03")
         self.assertIn("^C", stopped)
-        self.assertTrue(stopped.endswith("bec$ "))
+        self.assertTrue(strip_sgr(stopped).endswith("bec$ "))
         self.assertEqual(sess.v7_phase, "shell")
         ran("false")
         self.assertEqual(sess.v7_status, 1)
@@ -578,7 +584,7 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("bec$", questioned)
         back = push(sess, "\x03")
         self.assertIn("^C", back)
-        self.assertTrue(back.endswith("bec$ "))
+        self.assertTrue(strip_sgr(back).endswith("bec$ "))
         self.assertEqual(sess.v7_phase, "shell")
         self.assertIn(year, ran("date"))
         self.assertIn("\r\n/\r\n", ran("/bin/pwd"))
@@ -623,17 +629,17 @@ class CommandTests(unittest.TestCase):
         sess.user = "ada"
         out = push(sess, "frobnicate\r")
         self.assertIn("frobnicate: not found\r\n", out)
-        self.assertTrue(out.endswith(pad_prompt_end()))
+        self.assertTrue(strip_sgr(out).endswith(pad_prompt_end()))
 
     def test_clear_and_clr_wipe_the_pad(self) -> None:
         sess = get_session("sid-clr")
         sess.user = "ada"
         wiped = push(sess, "clear\r")
         self.assertIn("\x1b[2J\x1b[H", wiped)
-        self.assertTrue(wiped.endswith(pad_prompt_end("ada")))
+        self.assertTrue(strip_sgr(wiped).endswith(pad_prompt_end("ada")))
         alias = push(sess, "clr\r")
         self.assertIn("\x1b[2J\x1b[H", alias)
-        self.assertTrue(alias.endswith(pad_prompt_end("ada")))
+        self.assertTrue(strip_sgr(alias).endswith(pad_prompt_end("ada")))
 
     def test_who_is_other_live_sessions_only(self) -> None:
         ada = get_session("sid-ada")
@@ -714,7 +720,7 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(out.endswith("who"))
         resumed = hello(sess)
         self.assertIn("GL-01", resumed)
-        self.assertTrue(resumed.endswith(pad_prompt_end("ada")))
+        self.assertTrue(strip_sgr(resumed).endswith(pad_prompt_end("ada")))
         self.assertEqual(sess.line, "")
         self.assertEqual(sess.history, ["motd", "who"])
 
@@ -886,9 +892,9 @@ class LiveServerTests(unittest.IsolatedAsyncioTestCase):
 
             ada_in = await _register(left, "ada", "ada@example.com")
             self.assertIn("IDENTITY  ada", ada_in)
-            self.assertTrue(ada_in.endswith(pad_prompt_end("ada")))
+            self.assertTrue(strip_sgr(ada_in).endswith(pad_prompt_end("ada")))
             bob_in = await _register(right, "bob", "bob@example.com")
-            self.assertTrue(bob_in.endswith(pad_prompt_end("bob")))
+            self.assertTrue(strip_sgr(bob_in).endswith(pad_prompt_end("bob")))
 
             await left.send("who\r")
             who = await left.recv()
@@ -913,7 +919,7 @@ class LiveServerTests(unittest.IsolatedAsyncioTestCase):
         async with _connect(websockets, left_cookie) as resumed:
             text = await resumed.recv()
             self.assertIn("GL-01", text)
-            self.assertTrue(text.endswith(pad_prompt_end("ada")))
+            self.assertTrue(strip_sgr(text).endswith(pad_prompt_end("ada")))
             await resumed.send("logout\r")
             out = await resumed.recv()
             self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", out)
