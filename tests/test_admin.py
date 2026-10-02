@@ -10,21 +10,35 @@ from pathlib import Path
 
 _fd, _DB = tempfile.mkstemp(prefix="admin-", suffix=".db")
 os.close(_fd)
+_pad_fd, _PAD_DB = tempfile.mkstemp(prefix="admin-pad-", suffix=".db")
+os.close(_pad_fd)
 _SITE = tempfile.mkdtemp(prefix="admin-site-")
 os.environ["CROSSBAR_ADMIN_DB"] = _DB
 os.environ["CROSSBAR_ADMIN_AUDIT"] = str(Path(_SITE) / "audit.log")
 os.environ["CROSSBAR_SITE"] = _SITE
+os.environ["CROSSBAR_DB"] = _PAD_DB
 
 from starlette.testclient import TestClient  # noqa: E402
 
+from crossbar import accounts  # noqa: E402
 from crossbar.adminapp import build_admin_app  # noqa: E402
 from crossbar.lobby import pad_hosts_text  # noqa: E402
 from crossbar.operators import issue_setup_token  # noqa: E402
+
+if accounts._conn is not None:
+    accounts._conn.close()
+    accounts._conn = None
+    accounts._conn_path = None
 
 
 class AdminTests(unittest.TestCase):
     def setUp(self) -> None:
         os.environ["CROSSBAR_SITE"] = _SITE
+        os.environ["CROSSBAR_DB"] = _PAD_DB
+        if accounts._conn is not None and accounts._conn_path != _PAD_DB:
+            accounts._conn.close()
+            accounts._conn = None
+            accounts._conn_path = None
         runtime = Path(_SITE) / "runtime.json"
         if runtime.exists():
             runtime.unlink()
@@ -107,6 +121,8 @@ class AdminTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].sender, "sysop")
         self.assertEqual(rows[0].kind, "broadcast")
+        self.assertEqual(rows[0].subject, "pad notice")
+        self.assertIn("hello from console", rows[0].body)
         audit2 = Path(os.environ["CROSSBAR_ADMIN_AUDIT"]).read_text(encoding="utf-8")
         self.assertIn("mail-broadcast", audit2)
 
