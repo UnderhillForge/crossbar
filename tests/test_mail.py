@@ -14,10 +14,17 @@ from crossbar.accounts import create_account, set_account_fields
 class MailApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self._previous = os.environ.get("CROSSBAR_DB")
+        self._previous_wall = os.environ.get("CROSSBAR_WALL")
         fd, path = tempfile.mkstemp(prefix="grayline-mail-", suffix=".db")
         os.close(fd)
         self._path = path
         os.environ["CROSSBAR_DB"] = path
+        wall_fd, wall_path = tempfile.mkstemp(prefix="wall-mail-", suffix=".asc")
+        os.close(wall_fd)
+        self._wall_path = wall_path
+        os.environ["CROSSBAR_WALL"] = wall_path
+        with open(wall_path, "w", encoding="utf-8") as handle:
+            handle.write("# test wall\n")
         if accounts._conn is not None:
             accounts._conn.close()
             accounts._conn = None
@@ -36,10 +43,15 @@ class MailApiTests(unittest.TestCase):
             os.environ.pop("CROSSBAR_DB", None)
         else:
             os.environ["CROSSBAR_DB"] = self._previous
-        try:
-            os.unlink(self._path)
-        except OSError:
-            pass
+        if self._previous_wall is None:
+            os.environ.pop("CROSSBAR_WALL", None)
+        else:
+            os.environ["CROSSBAR_WALL"] = self._previous_wall
+        for path in (self._path, self._wall_path):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     def test_schema_exists(self) -> None:
         tables = {
