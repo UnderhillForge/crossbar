@@ -42,6 +42,11 @@ SECRET = "test-secret-for-crossbar"
 INDEX = ROOT / "static" / "index.html"
 
 
+def pad_prompt_end(user: str = "ada", path: str = "main") -> str:
+    """Suffix of the configurable grayline prompt (time varies)."""
+    return f"{user}@grayline/{path}> "
+
+
 class CommandTests(unittest.TestCase):
     def setUp(self) -> None:
         SESSIONS.clear()
@@ -50,14 +55,26 @@ class CommandTests(unittest.TestCase):
         SESSIONS.clear()
 
     def test_banner_names_grayline_and_crossbar(self) -> None:
+        from crossbar.lobby import help_text, load_asc
+
         text = banner()
-        self.assertIn("CONNECTED  T1    DTE 03    NODE GL-01", text)
-        self.assertIn("GREYLINE PUBLIC DATA NETWORK", text)
-        self.assertIn("PAD READY", text)
+        self.assertEqual(text, load_asc("welcome") + "\r\n")
+        self.assertIn("CONNECTED T1 // DTE 03 // NODE GL-01", text)
+        self.assertIn("GRAYLINE.DEV X.25 PUBLIC DATA NETWORK", text)
+        self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", text)
+        self.assertIn("Crossbar Consortium", text)
         self.assertNotIn("1985", text)
         self.assertNotIn("1993", text)
         self.assertNotIn("PiSecure", text)
         self.assertNotIn("pisecure", text.lower())
+
+        helped = help_text()
+        self.assertEqual(helped, load_asc("menu_header") + "\r\n" + load_asc("main_menu"))
+        self.assertIn("[MENU]", helped)
+        self.assertIn("[Main]", helped)
+        self.assertIn("[System]", helped)
+        self.assertIn("HOSTS", helped)
+        self.assertIn("PROFILE_CONFIG", helped)
 
     def test_login_guest_register_and_reserved(self) -> None:
         from crossbar.accounts import authenticate, create_account, get_account
@@ -66,7 +83,7 @@ class CommandTests(unittest.TestCase):
         arrived = push(guest, "guest\r")
         self.assertIn("GUEST ACCEPTED", arrived)
         self.assertIn("CIRCUIT OPEN", arrived)
-        self.assertTrue(arrived.endswith("GL> "))
+        self.assertTrue(arrived.endswith(pad_prompt_end("guest")))
         self.assertEqual(guest.user, "guest")
         self.assertIsNone(get_account("guest"))
 
@@ -92,7 +109,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(fresh.user, "ada")
         self.assertIn("IDENTITY  ada", done)
         self.assertIn("CIRCUIT OPEN", done)
-        self.assertTrue(done.endswith("GL> "))
+        self.assertTrue(done.endswith(pad_prompt_end("ada")))
         account = get_account("ada")
         self.assertIsNotNone(account)
         assert account is not None
@@ -110,7 +127,7 @@ class CommandTests(unittest.TestCase):
         good = push(again, "secret12\r")
         self.assertEqual(again.user, "ada")
         self.assertIn("IDENTITY  ada", good)
-        self.assertTrue(good.endswith("GL> "))
+        self.assertTrue(good.endswith(pad_prompt_end("ada")))
         self.assertTrue(authenticate("ada", "secret12"))
         self.assertFalse(authenticate("sysop", "secret12"))
         self.assertFalse(authenticate("admin", "secret12"))
@@ -139,7 +156,7 @@ class CommandTests(unittest.TestCase):
         out = push(sess, "help\r")
         self.assertIn("help\r\n", out)
         self.assertIn("WHO", out)
-        self.assertTrue(out.endswith("GL> "))
+        self.assertTrue(out.endswith(pad_prompt_end()))
 
     def test_backspace_in_one_chunk_runs_the_edited_command(self) -> None:
         sess = get_session("sid-bs2")
@@ -164,8 +181,32 @@ class CommandTests(unittest.TestCase):
         sess.host = "grayline"
         listed = push(sess, "motd\r")
         self.assertIn("Orientation circuit is BEC.", listed)
-        self.assertIn("NEWS UNAVAILABLE", push(sess, "news\r"))
-        self.assertIn("not found", push(sess, "mail\r"))
+        bulletin = push(sess, "news\r")
+        self.assertIn("GRAYLINE PDN", bulletin)
+        self.assertIn("LOCAL BULLETIN", bulletin)
+        self.assertIn("Crossbar", bulletin)
+        self.assertNotIn("NEWS UNAVAILABLE", bulletin)
+        from crossbar.accounts import create_account, get_account
+
+        if get_account("mailer") is None:
+            create_account("mailer", "secret12", "mailer@example.com")
+        mailer = get_session("sid-lobby-mailer")
+        mailer.user = "mailer"
+        mailer.host = "grayline"
+        guest = get_session("sid-lobby-guest-mail")
+        guest.user = "guest"
+        guest.host = "grayline"
+        self.assertIn("logon required", push(guest, "mail\r"))
+        mailbox = push(mailer, "mail\r")
+        self.assertIn("MAILBOX  mailer", mailbox)
+        helped = push(sess, "?\r")
+        self.assertIn("MAIL", helped)
+        self.assertIn("WALL", helped)
+        wall = push(sess, "wall\r")
+        self.assertIn("WALL", wall)
+        posted = push(mailer, "wall hello pad\r")
+        self.assertIn("posted", posted)
+        self.assertIn("hello pad", posted)
         here = push(sess, "grayline\r")
         self.assertIn("already connected to grayline\r\n", here)
         self.assertIn("Orientation circuit is BEC.", here)
@@ -174,12 +215,14 @@ class CommandTests(unittest.TestCase):
         self.assertIn("logout", again)
         helped = push(sess, "?\r")
         self.assertIn("circuits", helped)
-        self.assertIn("orientation circuit is BEC", helped)
+        self.assertIn("[Main]", helped)
         self.assertIn("BEC", push(sess, "hosts\r"))
         self.assertIn("OFFLINE", push(sess, "HOSTS\r"))
         bob = get_session("sid-lobby-bob")
         bob.user = "bob"
-        self.assertIn("IDENT    bob", push(sess, "whois bob\r"))
+        bob_finger = push(sess, "whois bob\r")
+        self.assertIn("Login: bob", bob_finger)
+        self.assertIn("On since", bob_finger)
         who = push(sess, "who\r")
         self.assertIn("\r\nbob\r\n", who)
         self.assertNotIn("\r\nada\r\n", who)
@@ -212,7 +255,9 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("Renegade", board)
         home = push(sess, "bye\r")
         self.assertEqual(sess.host, "grayline")
-        self.assertTrue(home.endswith("GL> "))
+        self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", home)
+        self.assertIn("CIRCUIT OPEN", home)
+        self.assertTrue(home.endswith(pad_prompt_end("ada")))
 
         direct = push(sess, "connect ta\r")
         self.assertIn("NO CARRIER", direct)
@@ -243,7 +288,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(sess.line, "hosts ")
         sess.line = ""
         many = push(sess, "\t")
-        self.assertIn("\r\nGL> ", many)
+        self.assertIn(pad_prompt_end("ada"), many)
         self.assertIn("connect", many)
         self.assertIn("bec", many)
         self.assertNotIn("hank", many)
@@ -256,7 +301,7 @@ class CommandTests(unittest.TestCase):
         sess.line = ""
         status = push(sess, "FULL\r")
         self.assertIn("NODE GL-01", status)
-        self.assertIn("NEWS UNAVAILABLE", status)
+        self.assertIn("NEWS  LOCAL BULLETIN", status)
         self.assertIn("ada", status)
         self.assertIn("not found", push(sess, "connect orientation\r"))
         self.assertEqual(sess.host, "grayline")
@@ -375,7 +420,9 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(sess.host, "grayline")
         self.assertEqual(sess.baud_now, T1_BAUD)
         self.assertIn("NO CARRIER", left)
-        self.assertTrue(left.endswith("GL> "))
+        self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", left)
+        self.assertIn("CIRCUIT OPEN", left)
+        self.assertTrue(left.endswith(pad_prompt_end("ada")))
         self.assertEqual(sess.baud_now, T1_BAUD)
         smoke = (ROOT / "scripts" / "smoke-bec.md").read_text(encoding="utf-8")
         self.assertNotIn(secret, smoke)
@@ -550,7 +597,17 @@ class CommandTests(unittest.TestCase):
         sess.user = "ada"
         out = push(sess, "frobnicate\r")
         self.assertIn("frobnicate: not found\r\n", out)
-        self.assertTrue(out.endswith("GL> "))
+        self.assertTrue(out.endswith(pad_prompt_end()))
+
+    def test_clear_and_clr_wipe_the_pad(self) -> None:
+        sess = get_session("sid-clr")
+        sess.user = "ada"
+        wiped = push(sess, "clear\r")
+        self.assertIn("\x1b[2J\x1b[H", wiped)
+        self.assertTrue(wiped.endswith(pad_prompt_end("ada")))
+        alias = push(sess, "clr\r")
+        self.assertIn("\x1b[2J\x1b[H", alias)
+        self.assertTrue(alias.endswith(pad_prompt_end("ada")))
 
     def test_who_is_other_live_sessions_only(self) -> None:
         ada = get_session("sid-ada")
@@ -576,8 +633,9 @@ class CommandTests(unittest.TestCase):
         sess.host = "elsewhere"
         out = cmd_connect(sess, ["grayline"])
         self.assertEqual(sess.host, "grayline")
+        self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", out)
         self.assertIn("CIRCUIT OPEN", out)
-        self.assertEqual(prompt_for(sess), "GL> ")
+        self.assertTrue(prompt_for(sess).endswith(pad_prompt_end("ada")))
 
         menu = cmd_connect(sess, ["terminal-addiction"])
         self.assertIn("NO CARRIER", menu)
@@ -595,21 +653,26 @@ class CommandTests(unittest.TestCase):
             ["bec", "tymnet", "terminal-addiction"],
         )
 
+        sess.login_at = time.time()
         finger = cmd_finger(sess, [])
-        self.assertIn("IDENT    ada", finger)
-        self.assertIn("DEST     PAD", finger)
+        self.assertIn("Login            Name             TTY      Idle  Where", finger)
+        self.assertIn("ada", finger)
+        self.assertIn("PAD", finger)
 
         other = get_session("sid-other")
         other.user = "bob"
+        other.login_at = time.time()
         found = cmd_finger(sess, ["bob"])
-        self.assertIn("IDENT    bob", found)
-        self.assertIn("not on the wire", cmd_finger(sess, ["nobody"]))
+        self.assertIn("Login: bob", found)
+        self.assertIn("On since", found)
+        self.assertIn("No Plan.", found)
+        self.assertIn("no such user", cmd_finger(sess, ["nobody"]))
 
         sid = sess.sid
         out = cmd_logout(sess, [])
         self.assertEqual(sess.sid, sid)
         self.assertIsNone(sess.user)
-        self.assertIn("GREYLINE", out)
+        self.assertIn("GRAYLINE", out)
         self.assertTrue(out.endswith("LOGON: "))
         self.assertEqual(sess.history, [])
 
@@ -625,7 +688,7 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(out.endswith("who"))
         resumed = hello(sess)
         self.assertIn("GL-01", resumed)
-        self.assertTrue(resumed.endswith("GL> "))
+        self.assertTrue(resumed.endswith(pad_prompt_end("ada")))
         self.assertEqual(sess.line, "")
         self.assertEqual(sess.history, ["motd", "who"])
 
@@ -638,9 +701,9 @@ class CommandTests(unittest.TestCase):
         plain = "".join(text for text, _d, _k in steps)
         for line in plain.split("\r\n"):
             self.assertLessEqual(len(line), 80, line)
-        self.assertIn("CONNECTED  T1", plain)
-        self.assertIn("PAD READY", plain)
-        self.assertNotIn("CROSSBAR", plain)
+        self.assertIn("CONNECTED T1", plain)
+        self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", plain)
+        self.assertIn("Crossbar Consortium", plain)
         self.assertNotIn("\x1b[32m", plain)
         self.assertNotIn("1985", plain)
         self.assertNotIn("1993", plain)
@@ -663,18 +726,36 @@ class CommandTests(unittest.TestCase):
         fake = FakeSocket()
         asyncio.run(play_boot(fake))  # type: ignore[arg-type]
         joined = "".join(fake.sent)
-        self.assertIn("PAD READY", joined)
-        self.assertNotIn("CROSSBAR", joined)
+        self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", joined)
+        self.assertIn("Crossbar Consortium", joined)
         self.assertEqual(fake.reads, 0)
 
     def test_finger_dummies_and_verify(self) -> None:
+        from crossbar.accounts import create_account, set_account_fields
+
         sess = get_session("sid-finger")
         sess.user = "ada"
+        sess.login_at = time.time()
         sysop = push(sess, "finger sysop\r")
         admin = push(sess, "finger admin\r")
         self.assertIn("not accepting mail", sysop)
         self.assertIn("not accepting mail", admin)
         self.assertIn("verification is dark", push(sess, "verify\r"))
+
+        create_account("cyd", "secret12", "cyd@example.com")
+        set_account_fields("cyd", note="builds doors\ntrusts the pad")
+        offline = cmd_finger(sess, ["cyd"])
+        self.assertIn("Login: cyd", offline)
+        self.assertIn("Not logged in.", offline)
+        self.assertIn("Mail: cyd@example.com", offline)
+        self.assertIn("Plan:", offline)
+        self.assertIn("builds doors", offline)
+        self.assertNotIn("ps1", offline.lower())
+        self.assertNotIn("wallet", offline.lower())
+
+        short = cmd_finger(sess, [])
+        self.assertIn("Login            Name", short)
+        self.assertIn("ada", short)
 
     def test_commands_do_not_import_starlette(self) -> None:
         source = (ROOT / "crossbar" / "commands.py").read_text(encoding="utf-8")
@@ -767,15 +848,15 @@ class LiveServerTests(unittest.IsolatedAsyncioTestCase):
         async with _connect(websockets, left_cookie) as left, _connect(websockets, right_cookie) as right:
             left_hello = await _skip_boot(left)
             right_hello = await _skip_boot(right)
-            self.assertIn("PAD READY", left_hello)
+            self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", left_hello)
             self.assertTrue(left_hello.endswith("LOGON: "))
             self.assertTrue(right_hello.endswith("LOGON: "))
 
             ada_in = await _register(left, "ada", "ada@example.com")
             self.assertIn("IDENTITY  ada", ada_in)
-            self.assertTrue(ada_in.endswith("GL> "))
+            self.assertTrue(ada_in.endswith(pad_prompt_end("ada")))
             bob_in = await _register(right, "bob", "bob@example.com")
-            self.assertTrue(bob_in.endswith("GL> "))
+            self.assertTrue(bob_in.endswith(pad_prompt_end("bob")))
 
             await left.send("who\r")
             who = await left.recv()
@@ -800,10 +881,10 @@ class LiveServerTests(unittest.IsolatedAsyncioTestCase):
         async with _connect(websockets, left_cookie) as resumed:
             text = await resumed.recv()
             self.assertIn("GL-01", text)
-            self.assertTrue(text.endswith("GL> "))
+            self.assertTrue(text.endswith(pad_prompt_end("ada")))
             await resumed.send("logout\r")
             out = await resumed.recv()
-            self.assertIn("PAD READY", out)
+            self.assertIn("PACKET ASSEMBER/DISSASEMBLER READY", out)
             self.assertTrue(out.endswith("LOGON: "))
 
         again_cookie, again_sid, _ = await asyncio.to_thread(_get_home, left_cookie)
@@ -862,7 +943,7 @@ async def _register(ws, handle: str, email: str) -> str:
     await ws.send("secret12\r")
     await _read_until(ws, "email: ")
     await ws.send(f"{email}\r")
-    return await _read_until(ws, "GL> ")
+    return await _read_until(ws, pad_prompt_end(handle))
 
 
 def _cookie_pair(header: str) -> str:
