@@ -23,6 +23,11 @@ os.environ["CROSSBAR_SECRET"] = "test-secret-for-crossbar"
 _fd, _DB = tempfile.mkstemp(prefix="grayline-test-", suffix=".db")
 os.close(_fd)
 os.environ["CROSSBAR_DB"] = _DB
+_wall_fd, _WALL = tempfile.mkstemp(prefix="wall-test-", suffix=".asc")
+os.close(_wall_fd)
+os.environ["CROSSBAR_WALL"] = _WALL
+with open(_WALL, "w", encoding="utf-8") as _wall_out:
+    _wall_out.write("# test wall\n")
 
 from crossbar.commands import (  # noqa: E402
     cmd_bye,
@@ -787,6 +792,12 @@ class LiveServerTests(unittest.IsolatedAsyncioTestCase):
         os.close(_live_fd)
         env["CROSSBAR_DB"] = live_db
         cls.live_db = live_db
+        _live_wall_fd, live_wall = tempfile.mkstemp(prefix="wall-live-", suffix=".asc")
+        os.close(_live_wall_fd)
+        with open(live_wall, "w", encoding="utf-8") as handle:
+            handle.write("# live test wall\n")
+        env["CROSSBAR_WALL"] = live_wall
+        cls.live_wall = live_wall
         cls.log_path = Path("/tmp/crossbar-test.log")
         cls.log = cls.log_path.open("w", encoding="utf-8")
         cls.proc = subprocess.Popen(
