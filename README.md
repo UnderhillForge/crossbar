@@ -87,7 +87,7 @@ These three commands exist only at `GL>`, and only for a real account. Guest get
 | `pschain` | Difficulty, height, tip hash, network hashrate, health, and nodes. Peer lines are a 12-hex SHA-256 of `peer_id` / `node_id` / `host` (never raw `ip:port`). Uses the pisecured node when it answers, otherwise `https://pisecure-bootstrap-production.up.railway.app` (`/api/v1/network/live` and `/api/v1/nodes/list`). A hashrate the directory does not report is `unavailable`. |
 | `leaders` | Top 20 accounts by accepted claims on this hub. Ties share a rank. |
 | `user_list` | Every registered account, its leaderboard rank when it has claims, and last login. |
-| `mail` | Pad-local letters for registered handles (`MAIL LIST/READ/SEND/DEL`). Guest: `logon required`. Reply/forward/archive and login unread notice follow in later cuts. See `docs/design-mail.md`. |
+| `mail` | Pad-local letters for registered handles: `MAIL LIST/READ/SEND/REPLY/FWD/DEL/ARCHIVE`. Guest: `logon required`. Unread count prints after `CIRCUIT OPEN` on login. Operator broadcasts as `sysop` from `/o/mail`. See `docs/design-mail.md`. |
 | `wall` | Last 10 one-line posts. Anyone can read; registered handles `WALL <text>` to write (72 chars). |
 
 Node replies that Crossbar prints as one line: `unknown flag`, `already claimed`, `flag exhausted`, `flag expired`, `unlimited flag cannot pay`. A missing flag method is `flags are not on this node yet`, and the account is not marked claimed. A missing `getchaininfo` is `getchaininfo is not on this node yet`. `createflag` is not a lobby command.

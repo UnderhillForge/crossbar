@@ -58,7 +58,7 @@ _HELP_TOPICS = {
     "date": "pad clock",
     "motd": "message of the day",
     "news": "pad bulletin",
-    "mail": "letters: list read send delete",
+    "mail": "letters: list read send reply fwd del archive",
     "wall": "last 10 wall lines; write one line",
     "full": "baud, handle, destination",
     "status": "baud, handle, destination",
@@ -75,13 +75,17 @@ _HELP_TOPICS = {
 
 
 def _arrived(sess: Session) -> str:
+    from crossbar import mail
+
     sess.phase = "shell"
     sess.pending_handle = ""
     sess.pending_password = ""
     sess.host = "grayline"
     sess.previous_host = ""
     sess.login_at = time.time()
-    return f"{pad_card(sess.user or 'guest')}{prompt_for(sess)}"
+    card = pad_card(sess.user or "guest")
+    hint = mail.unread_notice(sess.user)
+    return f"{card}{hint}{prompt_for(sess)}"
 
 
 def _clear_pending(sess: Session) -> None:
@@ -324,10 +328,67 @@ def _mail_help() -> str:
         "MAIL LIST [folder]   inbox | sent | archive\r\n"
         "MAIL READ <id>\r\n"
         "MAIL SEND <handle> [subject…]\r\n"
+        "MAIL REPLY <id>\r\n"
+        "MAIL FWD <id> <handle>\r\n"
         "MAIL DEL <id>…\r\n"
+        "MAIL ARCHIVE <id>…\r\n"
         "MAIL HELP\r\n"
         "Compose ends with . alone. Q or ^C cancels.\r\n"
         "Blank subject is allowed → (no subject).\r\n"
+    )
+
+
+def _mail_re_subject(subject: str) -> str:
+    text = (subject or "").strip()
+    if not text:
+        return "Re: (no subject)"
+    if text.lower().startswith("re:"):
+        return text
+    return f"Re: {text}"
+
+
+def _mail_fwd_subject(subject: str) -> str:
+    text = (subject or "").strip()
+    if not text:
+        return "Fwd: (no subject)"
+    if text.lower().startswith("fwd:"):
+        return text
+    return f"Fwd: {text}"
+
+
+def _mail_quote(body: str) -> list[str]:
+    lines = ["", "--- original ---"]
+    for raw in body.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        chunk = raw
+        while len(chunk) > 70:
+            lines.append("> " + chunk[:70])
+            chunk = chunk[70:]
+        lines.append("> " + chunk)
+    return lines
+
+
+def _mail_begin_compose(
+    sess: Session,
+    *,
+    to: str,
+    subject: str,
+    body_lines: list[str] | None = None,
+    reply_to: int | None = None,
+) -> str:
+    from crossbar import mail
+
+    try:
+        mail._assert_recipient(sess.user or "", to)
+    except ValueError as exc:
+        return f"{exc}\r\n"
+    sess.mail_to = to.strip().lower()
+    sess.mail_subject = subject.replace("\x00", "")[: mail.SUBJECT_MAX]
+    sess.mail_body_lines = list(body_lines or [])
+    sess.mail_reply_to = reply_to
+    sess.phase = "mail_body"
+    return (
+        f"Compose to {sess.mail_to}. End with . on a line by itself. "
+        "Q alone cancels.\r\n"
     )
 
 
@@ -373,11 +434,14 @@ def _mail_read(sess: Session, letter_id: int) -> str:
         "────────────────────────────────────────\r\n"
         f"{body}\r\n"
         "────────────────────────────────────────\r\n"
-        f"DEL {letter.id}\r\n"
+        f"REPLY {letter.id}  ·  FWD {letter.id} <handle>  ·  "
+        f"DEL {letter.id}  ·  ARCHIVE {letter.id}\r\n"
     )
 
 
 def _mail_begin_send(sess: Session, to: str, subject: str | None) -> str:
+    if subject is not None:
+        return _mail_begin_compose(sess, to=to, subject=subject)
     from crossbar import mail
 
     try:
@@ -387,16 +451,65 @@ def _mail_begin_send(sess: Session, to: str, subject: str | None) -> str:
     sess.mail_to = to.strip().lower()
     sess.mail_reply_to = None
     sess.mail_body_lines = []
-    if subject is not None:
-        sess.mail_subject = subject.replace("\x00", "")[: mail.SUBJECT_MAX]
-        sess.phase = "mail_body"
-        return (
-            f"Compose to {sess.mail_to}. End with . on a line by itself. "
-            "Q alone cancels.\r\n"
-        )
     sess.mail_subject = ""
     sess.phase = "mail_subject"
     return ""
+
+
+def _mail_reply(sess: Session, letter_id: int) -> str:
+    from crossbar import mail
+
+    letter = mail.get_letter(sess.user or "", letter_id)
+    if letter is None:
+        return "no such letter\r\n"
+    if letter.folder not in {"inbox", "archive"} or letter.sender == (sess.user or ""):
+        return "cannot reply to this letter\r\n"
+    if letter.sender in RESERVED or letter.sender == mail.SYSTEM_SENDER:
+        return f"{letter.sender} is not accepting mail\r\n"
+    mail.mark_read(sess.user or "", letter_id)
+    return _mail_begin_compose(
+        sess,
+        to=letter.sender,
+        subject=_mail_re_subject(letter.subject),
+        body_lines=_mail_quote(letter.body),
+        reply_to=letter.id,
+    )
+
+
+def _mail_fwd(sess: Session, letter_id: int, handle: str) -> str:
+    from crossbar import mail
+
+    letter = mail.get_letter(sess.user or "", letter_id)
+    if letter is None:
+        return "no such letter\r\n"
+    mail.mark_read(sess.user or "", letter_id)
+    block = [
+        "",
+        f"--- forwarded message from {letter.sender} ---",
+        f"Date: {_mail_when(letter.created)}",
+        f"Subj: {_mail_subject_shown(letter.subject)}",
+        "",
+        *letter.body.replace("\r\n", "\n").replace("\r", "\n").split("\n"),
+    ]
+    return _mail_begin_compose(
+        sess,
+        to=handle,
+        subject=_mail_fwd_subject(letter.subject),
+        body_lines=block,
+        reply_to=None,
+    )
+
+
+def _mail_archive(sess: Session, ids: list[str]) -> str:
+    from crossbar import mail
+
+    moved = 0
+    for tok in ids:
+        if mail.archive(sess.user or "", int(tok)):
+            moved += 1
+    if moved == 0:
+        return "no such letter\r\n"
+    return f"archived {moved}\r\n"
 
 
 def _mail_finish_send(sess: Session) -> str:
@@ -497,8 +610,18 @@ def cmd_mail(sess: Session, args: list[str]) -> str:
         if removed == 0:
             return "no such letter\r\n"
         return f"deleted {removed}\r\n"
-    if verb in {"reply", "fwd", "forward", "archive"}:
-        return "not yet — coming soon\r\n"
+    if verb == "reply":
+        if len(rest) != 1 or not rest[0].isdigit():
+            return "usage: MAIL REPLY <id>\r\n"
+        return _mail_reply(sess, int(rest[0]))
+    if verb in {"fwd", "forward"}:
+        if len(rest) != 2 or not rest[0].isdigit():
+            return "usage: MAIL FWD <id> <handle>\r\n"
+        return _mail_fwd(sess, int(rest[0]), rest[1])
+    if verb == "archive":
+        if not rest or not all(tok.isdigit() for tok in rest):
+            return "usage: MAIL ARCHIVE <id>…\r\n"
+        return _mail_archive(sess, rest)
     return "usage: MAIL HELP\r\n"
 
 
