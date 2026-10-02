@@ -318,22 +318,33 @@ def _peer_rows(result: Any) -> list[dict]:
         rows.extend(row for row in nested if isinstance(row, dict))
     if rows:
         return rows
-    if result.get("address") or result.get("host"):
+    if result.get("address") or result.get("host") or result.get("peer_id") or result.get("node_id"):
         return [result]
     return []
 
 
+def _peer_identity(row: dict) -> str:
+    """Stable id to hash. Prefer peer_id / node_id / host; address:port is last resort."""
+    for key in ("peer_id", "node_id", "id", "host"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            return value
+    address = str(row.get("address") or row.get("p2p_host") or "").strip()
+    port = row.get("port", row.get("rpc_port", row.get("p2p_port", "")))
+    if address and port not in (None, ""):
+        return f"{address}:{port}"
+    return address or "unknown"
+
+
+def _peer_tag(row: dict) -> str:
+    """Short hash of the peer identity. Never the raw ip:port."""
+    digest = hashlib.sha256(_peer_identity(row).encode("utf-8")).hexdigest()
+    return digest[:12]
+
+
 def _peer_line(row: dict) -> str:
-    host = str(row.get("host") or "")
-    address = str(row.get("address") or "")
-    port = row.get("port")
-    where = address or host or "unknown"
-    if port not in (None, ""):
-        where = f"{where}:{port}"
-    if host and address and host != address:
-        where = f"{host}  {where}"
     kind = "HINT" if row.get("hint") else "NODE"
-    return f"  {kind}  {where}"
+    return f"  {kind}  {_peer_tag(row)}"
 
 
 def _bootstrap_pschain() -> str:
@@ -371,14 +382,11 @@ def _bootstrap_pschain() -> str:
     for row in nodes:
         if not isinstance(row, dict):
             continue
-        name = str(row.get("node_id") or "node")
-        host = str(row.get("p2p_host") or row.get("host") or "")
-        port = row.get("rpc_port", row.get("p2p_port", ""))
-        where = host or "unknown"
-        if port not in (None, ""):
-            where = f"{where}:{port}"
-        state = str(row.get("status") or "")
-        lines.append(f"  {name}  {where}  {state}".rstrip())
+        state = str(row.get("status") or "").strip()
+        line = f"  NODE  {_peer_tag(row)}"
+        if state:
+            line = f"{line}  {state}"
+        lines.append(line)
     return "\r\n".join(lines) + "\r\n"
 
 

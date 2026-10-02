@@ -9,6 +9,8 @@ from crossbar import __version__
 VERSION = __version__
 HOST = "127.0.0.1"
 PORT = 8080
+# In-world pad name for [host] in data/text/prompt.asc.
+SYSTEM_NAME = "grayline"
 IDLE_TTL = 6 * 60 * 60
 COOKIE_NAME = "crossbar"
 # The cookie outlives one page view so a refresh can still present the sid.

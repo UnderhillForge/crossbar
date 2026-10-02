@@ -1,6 +1,6 @@
 # Crossbar
 
-Crossbar 0.3.1 is the terminal switchboard for GRAYLINE. The public face is [grayline.dev](https://grayline.dev): one full-screen terminal and a private session per browser.
+Crossbar 0.3.2 is the terminal switchboard for GRAYLINE. The public face is [grayline.dev](https://grayline.dev): one full-screen terminal and a private session per browser.
 
 This repo is the app. It runs on the VPS behind the existing nginx. TLS stays on nginx. The in-world machine is GRAYLINE. The lobby has no year. A door's period starts after `CONNECT`.
 
@@ -34,28 +34,30 @@ PISECURE_AWARDS_KEY=
 
 ## Logon
 
-First paint:
+First paint loads `data/text/welcome.asc` (figlet Grayline mark, then):
 
 ```
-CONNECTED  T1    DTE 03    NODE GL-01
+CONNECTED T1 // DTE 03 // NODE GL-01
+GRAYLINE.DEV X.25 PUBLIC DATA NETWORK
 
-GREYLINE PUBLIC DATA NETWORK
-PAD READY
+PACKET ASSEMBER/DISSASEMBLER READY
 
 LOGON:
 ```
 
+The same welcome paint reprints when a hop drops back on the pad (`bye`, BEC hangup, or `connect grayline`). `help` / `?` print `data/text/menu_header.asc` above `data/text/main_menu.asc`. Edit those files to change the menu without a code change. An operator help override still replaces the body when set.
+
 At `LOGON:`:
 
-- a blank line or `guest` prints the reverse-video header, `GUEST ACCEPTED`, `CIRCUIT OPEN`, and `GL>`. Guest has no database row.
-- a known handle asks `PASSWORD:`. A match prints the header, `IDENTITY <handle>`, `CIRCUIT OPEN`, and `GL>`. A bad password is `IDENTIFICATION NOT RECOGNIZED` and the prompt stays at `LOGON:`.
+- a blank line or `guest` prints the reverse-video header, `GUEST ACCEPTED`, `CIRCUIT OPEN`, and the pad prompt (`guest@grayline/main>`). Guest has no database row.
+- a known handle asks `PASSWORD:`. A match prints the header, `IDENTITY <handle>`, `CIRCUIT OPEN`, and the pad prompt. A bad password is `IDENTIFICATION NOT RECOGNIZED` and the prompt stays at `LOGON:`.
 - `new` asks for a handle, a password, the password again, and an email. Passwords are at least 4 characters and are stored with stdlib scrypt. Nothing sends email. `verify` replies `verification is dark`. New accounts get status `ok`.
 
 These handles cannot register or log in: `sysop`, `admin`, `root`, `operator`, `postmaster`, `grayline`, `crossbar`. `finger sysop` and `finger admin` say they are not accepting mail. `guest`, `new`, and `login` are prompt words, not accounts.
 
 The operator console can close guest logon or registration. Closed guest is `logon closed`. Closed registration is `registration is closed`.
 
-The lobby prompt is always `GL>`. Tab at `GL>` completes pad commands and host names. An unknown command prints `not found`.
+The lobby prompt comes from `data/text/prompt.asc`, with `[time]` (local `HH:MM:SS`), `[user]`, `[host]` (`grayline` from `SYSTEM_NAME`), and `[path]` (`main` on the pad, `profile` inside `profile_config`). Example: `18:22:00 ada@grayline/main> `. Tab at that prompt completes pad commands and host names. An unknown command prints `not found`.
 
 ## Circuits
 
@@ -70,9 +72,9 @@ TYMNET   CARRIER HOP                            T1     UP
 
 There is no host named orientation. `CONNECT BEC` (alias `big-evil`) prints `DIALING 1200...` and enters the UNIX V7 door. The shell prompt there is `bec$` or `bec#`. `logout` or `bye` from that door returns to `GL>` at T1. `CONNECT TA` or `terminal-addiction` prints `DIALING 2400...` and `NO CARRIER` and leaves the session on the pad. `CONNECT TYMNET` is the carrier hop. `bye` or `g` there returns to the pad. `office-314` is on the Tymnet directory and is dark.
 
-Greyline is T1 (1,544,000). A hop takes the lower of the current rate and the next host's ceiling, and the rate stays down until the path is Greyline alone. Output pacing happens on the WebSocket write. `MAP` and `HOSTS /T` draw the same three-gate tree. `FULL` is the pad, identity, and gates panes plus `NEWS UNAVAILABLE`. `NEWS` stays `NEWS UNAVAILABLE` until NNTP is wired. `DATE` is the real clock. `STATUS` is node, identity, destination, and baud. `FINGER` is identity, destination, and a grant count.
+Greyline is T1 (1,544,000). A hop takes the lower of the current rate and the next host's ceiling, and the rate stays down until the path is Greyline alone. Output pacing happens on the WebSocket write. `MAP` and `HOSTS /T` draw the same three-gate tree. `FULL` is the pad, identity, and gates panes plus `NEWS  LOCAL BULLETIN`. `NEWS` prints `data/text/news.asc` (Crossbar is the terminal software on the pad; NNTP is not attached yet). An operator news override in `runtime.json` still wins when set. `DATE` is the real clock. `STATUS` is node, identity, destination, and baud. `FINGER` with no args is a short who-is-on listing; `FINGER <handle>` is long form (login, on-since/idle or last login, mail, plan from the account note). It does not print wallet/`ps1`. Host names like `bec` still return circuit blurbs.
 
-`?` lists the pad commands. The operator console can replace that text and the MOTD without a deploy. Host state (`UP`, `OFFLINE`, `MAINT`) is the same kind of override, in `data/site/runtime.json`.
+`?` lists the pad commands. Default MOTD is `data/text/motd.asc`. The operator console can replace help text and MOTD without a deploy. Host state (`UP`, `OFFLINE`, `MAINT`) is the same kind of override, in `data/site/runtime.json`.
 
 ## Profile and claims
 
@@ -80,11 +82,13 @@ These three commands exist only at `GL>`, and only for a real account. Guest get
 
 | Command | What it does |
 | --- | --- |
-| `profile_config` | Menu for this account. The prompt stays `GL>PROF_CON>` until `Q`. `1` changes email, `2` changes the password, `3` links one `ps1`. A blank line at a field returns to the menu. A short name is resolved with `namelookup` on `PISECURE_RPC_URL`, then on each node from the bootstrap directory. The account stores that `ps1`. If no node answers, the short name is kept and resolved the next time a node does. The same `ps1` cannot sit on two accounts. If the node answers `listunspent`, the menu shows that balance. |
+| `profile_config` | Menu for this account. The prompt path becomes `profile` until `Q`. `1` changes email, `2` changes the password, `3` links one `ps1`. A blank line at a field returns to the menu. A short name is resolved with `namelookup` on `PISECURE_RPC_URL`, then on each node from the bootstrap directory. The account stores that `ps1`. If no node answers, the short name is kept and resolved the next time a node does. The same `ps1` cannot sit on two accounts. If the node answers `listunspent`, the menu shows that balance. |
 | `claim FLAG_ID` | Claims that flag for the linked `ps1`. With no link: `link a wallet first: ps1 link can be found in profile_config`. A claim already stored for this account, or a `ps1` that `listflags` already shows for that flag, replies `already yours` and does not submit again. Otherwise the server submits `claimflag`, signed by the awards key, with `flag_id` and that `ps1`. The doorway answer stays in Crossbar. Acceptance replies `claimed` and stores the flag id, `ps1`, and txid on the account. The same claim works from the BEC shell when the id is not a local BEC stamp. |
-| `pschain` | Difficulty, height, tip hash, network hashrate, health, and nodes. Uses the pisecured node when it answers, otherwise `https://pisecure-bootstrap-production.up.railway.app` (`/api/v1/network/live` and `/api/v1/nodes/list`). A hashrate the directory does not report is `unavailable`. |
+| `pschain` | Difficulty, height, tip hash, network hashrate, health, and nodes. Peer lines are a 12-hex SHA-256 of `peer_id` / `node_id` / `host` (never raw `ip:port`). Uses the pisecured node when it answers, otherwise `https://pisecure-bootstrap-production.up.railway.app` (`/api/v1/network/live` and `/api/v1/nodes/list`). A hashrate the directory does not report is `unavailable`. |
 | `leaders` | Top 20 accounts by accepted claims on this hub. Ties share a rank. |
 | `user_list` | Every registered account, its leaderboard rank when it has claims, and last login. |
+| `mail` | Pad-local letters for registered handles (`MAIL LIST/READ/SEND/DEL`). Guest: `logon required`. Reply/forward/archive and login unread notice follow in later cuts. See `docs/design-mail.md`. |
+| `wall` | Last 10 one-line posts. Anyone can read; registered handles `WALL <text>` to write (72 chars). |
 
 Node replies that Crossbar prints as one line: `unknown flag`, `already claimed`, `flag exhausted`, `flag expired`, `unlimited flag cannot pay`. A missing flag method is `flags are not on this node yet`, and the account is not marked claimed. A missing `getchaininfo` is `getchaininfo is not on this node yet`. `createflag` is not a lobby command.
 

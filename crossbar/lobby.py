@@ -3,10 +3,22 @@
 Greyline (GL>) is a public data network in no particular year: real clock,
 carrier language, no 1985 and no 1993. A door's period lives on the pack
 (`era`), and only after CONNECT. Do not put a door's dates on this banner.
+
+Terminal chrome under data/text/:
+  welcome.asc       public logon and return-to-pad
+  menu_header.asc   header above help / ?
+  main_menu.asc     editable command list for help / ?
+  prompt.asc        grayline pad prompt; [time] [user]@[host]/[path]>
+  news.asc          local NEWS bulletin (NNTP later)
+  motd.asc          message of the day
 """
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+
+from crossbar.config import SYSTEM_NAME
 from crossbar.packs import get_pack
 
 MOTD_LINE = "Orientation circuit is BEC."
@@ -14,18 +26,59 @@ MOTD_LINE = "Orientation circuit is BEC."
 # Grayline's directory. connect still does not open a TCP connection.
 HOSTS = get_pack("grayline").hosts
 
-
 LOGIN_LINE = "LOGON:"
+
+_TEXT_DIR = Path(__file__).resolve().parent.parent / "data" / "text"
+# name -> (mtime_ns, crlf text). Reload when the file changes on disk.
+_ASC_CACHE: dict[str, tuple[int, str]] = {}
+
+
+def load_asc(name: str) -> str:
+    """Load data/text/<name>.asc as CRLF terminal text. Rereads on mtime change."""
+    path = _TEXT_DIR / f"{name}.asc"
+    mtime_ns = path.stat().st_mtime_ns
+    cached = _ASC_CACHE.get(name)
+    if cached is not None and cached[0] == mtime_ns:
+        return cached[1]
+    raw = path.read_text(encoding="utf-8")
+    text = raw.replace("\r\n", "\n").replace("\n", "\r\n")
+    if not text.endswith("\r\n"):
+        text += "\r\n"
+    _ASC_CACHE[name] = (mtime_ns, text)
+    return text
 
 
 def logon_paint() -> str:
-    """First paint. No year, no logo, no phosphor."""
+    """First paint from data/text/welcome.asc. No door year."""
+    text = load_asc("welcome")
+    # Blank line before LOGON: / pad_card.
+    return text if text.endswith("\r\n\r\n") else text + "\r\n"
+
+
+def menu_header() -> str:
+    """Block header above the pad command list."""
+    return load_asc("menu_header")
+
+
+def pad_path_for(phase: str) -> str:
+    """Subsection token for [path] in prompt.asc."""
+    if phase.startswith("profile"):
+        return "profile"
+    if phase.startswith("mail"):
+        return "mail"
+    return "main"
+
+
+def render_pad_prompt(user: str, path: str = "main", when: datetime | None = None) -> str:
+    """Fill data/text/prompt.asc. Trailing space from the file is kept."""
+    clock = (when or datetime.now()).strftime("%H:%M:%S")
+    handle = user or "guest"
+    text = load_asc("prompt").rstrip("\r\n")
     return (
-        "CONNECTED  T1    DTE 03    NODE GL-01\r\n"
-        "\r\n"
-        "GREYLINE PUBLIC DATA NETWORK\r\n"
-        "PAD READY\r\n"
-        "\r\n"
+        text.replace("[time]", clock)
+        .replace("[user]", handle)
+        .replace("[host]", SYSTEM_NAME)
+        .replace("[path]", path)
     )
 
 
@@ -59,6 +112,11 @@ def pad_card(handle: str) -> str:
     return header_line(handle) + ident + "CIRCUIT OPEN\r\n"
 
 
+def return_to_pad(handle: str) -> str:
+    """Welcome mark plus circuit card when a hop drops back on grayline."""
+    return banner() + pad_card(handle)
+
+
 def pad_hosts_text() -> str:
     from crossbar import site
 
@@ -86,8 +144,12 @@ PAD_WORDS = (
     "who",
     "connect",
     "date",
+    "clear",
+    "clr",
     "motd",
     "news",
+    "mail",
+    "wall",
     "full",
     "status",
     "bye",
@@ -121,8 +183,8 @@ def _columns(names: list[str], width: int = 72) -> str:
     return "\r\n".join(lines)
 
 
-def pad_tab(line: str) -> tuple[str, str]:
-    """Complete one token at GL>. Returns (echo, new line). No match is a bell."""
+def pad_tab(line: str, prompt: str = "") -> tuple[str, str]:
+    """Complete one token at the pad prompt. Returns (echo, new line). No match is a bell."""
     if line.endswith(" ") or not line:
         base, token = line, ""
     elif " " in line:
@@ -139,25 +201,28 @@ def pad_tab(line: str) -> tuple[str, str]:
         erase = "\b \b" * len(token)
         return erase + canon + " ", base + canon + " "
     listing = _columns(matches)
-    return f"\r\n{listing}\r\nGL> {line}", line
+    shown = prompt or render_pad_prompt("guest", "main")
+    return f"\r\n{listing}\r\n{shown}{line}", line
 
 
 def motd_text() -> str:
+    """Message of the day from data/text/motd.asc."""
     from crossbar import site
 
     custom = site.motd_override()
     if custom:
         return custom if custom.endswith("\r\n") else custom + "\r\n"
-    return (
-        "GREYLINE PDN\r\n"
-        f"{MOTD_LINE}\r\n"
-        "Terminal Addiction is offline.\r\n"
-    )
+    return load_asc("motd")
 
 
 def news_text() -> str:
-    # Live NNTP belongs on the PAD, never in a door spool. Nothing is wired.
-    return "NEWS UNAVAILABLE\r\n"
+    """Local bulletin from data/text/news.asc. NNTP is not attached yet."""
+    from crossbar import site
+
+    custom = site.news_override()
+    if custom:
+        return custom if custom.endswith("\r\n") else custom + "\r\n"
+    return load_asc("news")
 
 
 def help_text() -> str:
@@ -165,25 +230,10 @@ def help_text() -> str:
 
     custom = site.help_override()
     if custom:
-        return custom if custom.endswith("\r\n") else custom + "\r\n"
-    return (
-        "  HOSTS     circuits\r\n"
-        "  CONNECT   <name>\r\n"
-        "  STATUS    this pad\r\n"
-        "  FULL      extended\r\n"
-        "  WHO       stations\r\n"
-        "  FINGER    <id>\r\n"
-        "  NEWS      nntp\r\n"
-        "  MOTD\r\n"
-        "  DATE\r\n"
-        "  BYE\r\n"
-        "  PROFILE_CONFIG\r\n"
-        "  CLAIM     <flag>\r\n"
-        "  PSCHAIN   nodes hash health\r\n"
-        "  LEADERS\r\n"
-        "  USER_LIST\r\n"
-        "  orientation circuit is BEC\r\n"
-    )
+        body = custom if custom.endswith("\r\n") else custom + "\r\n"
+    else:
+        body = load_asc("main_menu")
+    return menu_header() + "\r\n" + body
 
 
 def ls_text() -> str:

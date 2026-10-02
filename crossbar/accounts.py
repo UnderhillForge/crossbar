@@ -80,6 +80,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS accounts_wallet_unique ON accounts(wallet) WHERE wallet != ''"
     )
+    from crossbar import mail
+    from crossbar import wall
+
+    mail.ensure_schema(conn)
+    wall.ensure_schema(conn)
 
 
 def init_db() -> None:
@@ -292,6 +297,13 @@ def email_of(handle: str) -> str:
     if row is None:
         return ""
     return str(row["email"] or "")
+
+
+def note_of(handle: str) -> str:
+    row = connect().execute("SELECT note FROM accounts WHERE handle = ?", (handle,)).fetchone()
+    if row is None:
+        return ""
+    return str(row["note"] or "")
 
 
 def wallet_owner(ps1: str) -> str | None:

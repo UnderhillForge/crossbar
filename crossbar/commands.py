@@ -6,6 +6,7 @@ import re
 import sqlite3
 import time
 from collections.abc import Callable
+from datetime import datetime
 
 from crossbar import v7
 from crossbar import chainrpc
@@ -20,6 +21,7 @@ from crossbar.accounts import (
     get_account,
     hash_password,
     list_accounts,
+    note_of,
     record_claim,
     set_account_fields,
     wallet_of,
@@ -38,6 +40,7 @@ from crossbar.lobby import (
     pad_card,
     pad_hosts_text,
     pad_map_text,
+    return_to_pad,
 )
 from crossbar import site
 from crossbar.packs import PACKS, get_pack, hosts_listing
@@ -49,15 +52,19 @@ _HELP_TOPICS = {
     "?": "this list",
     "help": "this list",
     "hosts": "name, title, baud ceiling, state",
-    "finger": "a name on the wire",
+    "finger": "who is on the wire, or a handle",
     "who": "other live sessions",
     "connect": "open a circuit. orientation is CONNECT BEC",
     "date": "pad clock",
     "motd": "message of the day",
     "news": "pad bulletin",
+    "mail": "letters: list read send delete",
+    "wall": "last 10 wall lines; write one line",
     "full": "baud, handle, destination",
     "status": "baud, handle, destination",
     "bye": "back along the circuit",
+    "clear": "clear the screen",
+    "clr": "clear the screen",
     "logout": "clear your name",
     "bec": "orientation circuit, 1200, outside plant",
     "claim": "claim a flag for the linked ps1",
@@ -73,6 +80,7 @@ def _arrived(sess: Session) -> str:
     sess.pending_password = ""
     sess.host = "grayline"
     sess.previous_host = ""
+    sess.login_at = time.time()
     return f"{pad_card(sess.user or 'guest')}{prompt_for(sess)}"
 
 
@@ -228,6 +236,11 @@ def cmd_date(sess: Session, args: list[str]) -> str:
     return v7._now().strftime("%a %b %d %H:%M:%S %Z %Y") + "\r\n"
 
 
+def cmd_clear(sess: Session, args: list[str]) -> str:
+    """Wipe the terminal; submit() still appends the pad prompt."""
+    return "\x1b[2J\x1b[H"
+
+
 def _ident(sess: Session) -> str:
     handle = sess.user or "guest"
     return "GUEST" if handle.lower() == "guest" else handle
@@ -258,7 +271,7 @@ def cmd_full(sess: Session, args: list[str]) -> str:
             pane("PAD", [" NODE GL-01", f" BAUD {baud}"]),
             pane("IDENT", [f" {who}"]),
             pane("GATES", [" BEC 1200 UP", " TA 2400 OFFLINE", " TYMNET UP"]),
-            "NEWS UNAVAILABLE",
+            "NEWS  LOCAL BULLETIN",
         ]
     )
     return text + "\r\n"
@@ -276,8 +289,246 @@ def cmd_ls(sess: Session, args: list[str]) -> str:
     return ls_text()
 
 
+def _mail_gate(sess: Session) -> str | None:
+    if sess.host != "grayline":
+        return "mail: not found\r\n"
+    if not sess.user or sess.user == "guest" or get_account(sess.user) is None:
+        return "logon required\r\n"
+    return None
+
+
+def _clear_mail_draft(sess: Session) -> None:
+    sess.mail_to = ""
+    sess.mail_subject = ""
+    sess.mail_body_lines = []
+    sess.mail_reply_to = None
+
+
+def _mail_subject_shown(subject: str) -> str:
+    text = (subject or "").strip()
+    return text if text else "(no subject)"
+
+
+def _mail_when(created: str) -> str:
+    text = str(created or "").strip()
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text[:16] if text else "*"
+    return moment.astimezone().strftime("%d %b %H:%M")
+
+
+def _mail_help() -> str:
+    return (
+        "MAIL                 inbox summary\r\n"
+        "MAIL LIST [folder]   inbox | sent | archive\r\n"
+        "MAIL READ <id>\r\n"
+        "MAIL SEND <handle> [subject…]\r\n"
+        "MAIL DEL <id>…\r\n"
+        "MAIL HELP\r\n"
+        "Compose ends with . alone. Q or ^C cancels.\r\n"
+        "Blank subject is allowed → (no subject).\r\n"
+    )
+
+
+def _mail_list(sess: Session, folder: str) -> str:
+    from crossbar import mail
+
+    folder = (folder or "inbox").lower()
+    if folder not in {"inbox", "sent", "archive"}:
+        return "usage: MAIL LIST [inbox|sent|archive]\r\n"
+    rows = mail.list_letters(sess.user or "", folder)
+    unread = mail.unread_count(sess.user or "")
+    inbox_n = len(mail.list_letters(sess.user or "", "inbox"))
+    lines = [
+        f"MAILBOX  {sess.user}  ·  {unread} unread  ·  {inbox_n} inbox",
+        " ID   FROM         WHEN         SUBJECT",
+    ]
+    if not rows:
+        lines.append("(empty)")
+    for letter in rows:
+        who = letter.sender if folder != "sent" else letter.to_list
+        lines.append(
+            f" {letter.id:<4} {who:<12} {_mail_when(letter.created):<12} "
+            f"{_mail_subject_shown(letter.subject)}"
+        )
+    lines.append("Type MAIL READ <id>  ·  MAIL HELP for verbs")
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _mail_read(sess: Session, letter_id: int) -> str:
+    from crossbar import mail
+
+    letter = mail.get_letter(sess.user or "", letter_id)
+    if letter is None:
+        return "no such letter\r\n"
+    mail.mark_read(sess.user or "", letter_id)
+    body = letter.body.replace("\n", "\r\n")
+    return (
+        f"Letter {letter.id}\r\n"
+        f"From: {letter.sender}\r\n"
+        f"To:   {letter.to_list}\r\n"
+        f"Date: {_mail_when(letter.created)}\r\n"
+        f"Subj: {_mail_subject_shown(letter.subject)}\r\n"
+        "────────────────────────────────────────\r\n"
+        f"{body}\r\n"
+        "────────────────────────────────────────\r\n"
+        f"DEL {letter.id}\r\n"
+    )
+
+
+def _mail_begin_send(sess: Session, to: str, subject: str | None) -> str:
+    from crossbar import mail
+
+    try:
+        mail._assert_recipient(sess.user or "", to)
+    except ValueError as exc:
+        return f"{exc}\r\n"
+    sess.mail_to = to.strip().lower()
+    sess.mail_reply_to = None
+    sess.mail_body_lines = []
+    if subject is not None:
+        sess.mail_subject = subject.replace("\x00", "")[: mail.SUBJECT_MAX]
+        sess.phase = "mail_body"
+        return (
+            f"Compose to {sess.mail_to}. End with . on a line by itself. "
+            "Q alone cancels.\r\n"
+        )
+    sess.mail_subject = ""
+    sess.phase = "mail_subject"
+    return ""
+
+
+def _mail_finish_send(sess: Session) -> str:
+    from crossbar import mail
+
+    body = "\n".join(sess.mail_body_lines)
+    to = sess.mail_to
+    subject = sess.mail_subject
+    reply_to = sess.mail_reply_to
+    try:
+        mid = mail.send(
+            sender=sess.user or "",
+            to=to,
+            subject=subject,
+            body=body,
+            in_reply_to=reply_to,
+        )
+    except ValueError as exc:
+        return f"{exc}\r\n"
+    finally:
+        _clear_mail_draft(sess)
+        sess.phase = "shell"
+    return f"sent {mid} to {to}\r\n"
+
+
+def mail_line(sess: Session, raw: str) -> str:
+    text = raw
+    if sess.phase == "mail_subject":
+        stripped = text.strip()
+        if stripped.upper() == "Q":
+            _clear_mail_draft(sess)
+            sess.phase = "shell"
+            return "cancelled\r\n"
+        sess.mail_subject = stripped.replace("\x00", "")
+        from crossbar import mail
+
+        if len(sess.mail_subject) > mail.SUBJECT_MAX:
+            sess.mail_subject = ""
+            return "subject too long\r\n"
+        sess.phase = "mail_body"
+        return (
+            f"Compose to {sess.mail_to}. End with . on a line by itself. "
+            "Q alone cancels.\r\n"
+        )
+    if sess.phase == "mail_body":
+        stripped = text.strip()
+        if stripped.upper() == "Q":
+            _clear_mail_draft(sess)
+            sess.phase = "shell"
+            return "cancelled\r\n"
+        if stripped == ".":
+            return _mail_finish_send(sess)
+        from crossbar import mail
+
+        tentative = sess.mail_body_lines + [text.rstrip("\r\n")]
+        joined = "\n".join(tentative)
+        if len(tentative) > mail.BODY_MAX_LINES or len(joined) > mail.BODY_MAX_CHARS:
+            return "body too long\r\n"
+        sess.mail_body_lines.append(text.rstrip("\r\n"))
+        return ""
+    sess.phase = "shell"
+    _clear_mail_draft(sess)
+    return ""
+
+
 def cmd_mail(sess: Session, args: list[str]) -> str:
-    return "no letters.\r\n"
+    blocked = _mail_gate(sess)
+    if blocked:
+        return blocked
+    if not args:
+        return _mail_list(sess, "inbox")
+    verb = args[0].lower()
+    rest = args[1:]
+    if verb in {"help", "?"}:
+        return _mail_help()
+    if verb == "list":
+        folder = rest[0] if rest else "inbox"
+        return _mail_list(sess, folder)
+    if verb == "read":
+        if len(rest) != 1 or not rest[0].isdigit():
+            return "usage: MAIL READ <id>\r\n"
+        return _mail_read(sess, int(rest[0]))
+    if verb == "send":
+        if not rest:
+            return "usage: MAIL SEND <handle> [subject]\r\n"
+        to = rest[0]
+        subject = " ".join(rest[1:]) if len(rest) > 1 else None
+        return _mail_begin_send(sess, to, subject)
+    if verb in {"del", "delete", "rm"}:
+        if not rest or not all(tok.isdigit() for tok in rest):
+            return "usage: MAIL DEL <id>…\r\n"
+        from crossbar import mail
+
+        removed = 0
+        for tok in rest:
+            if mail.soft_delete(sess.user or "", int(tok)):
+                removed += 1
+        if removed == 0:
+            return "no such letter\r\n"
+        return f"deleted {removed}\r\n"
+    if verb in {"reply", "fwd", "forward", "archive"}:
+        return "not yet — coming soon\r\n"
+    return "usage: MAIL HELP\r\n"
+
+
+def _wall_when(created: str) -> str:
+    return _mail_when(created)
+
+
+def cmd_wall(sess: Session, args: list[str]) -> str:
+    from crossbar import wall
+
+    if sess.host != "grayline":
+        return "wall: not found\r\n"
+    if not args:
+        posts = wall.list_posts()
+        lines = ["WALL  (last 10)"]
+        if not posts:
+            lines.append("(empty)")
+        else:
+            for handle, body, created in reversed(posts):
+                lines.append(f"{_wall_when(created)}  {handle}: {body}")
+        lines.append("WALL <text>  write one line (registered)")
+        return "\r\n".join(lines) + "\r\n"
+    if not sess.user or sess.user == "guest" or get_account(sess.user) is None:
+        return "logon required\r\n"
+    text = " ".join(args)
+    try:
+        wall.post(sess.user, text)
+    except ValueError as exc:
+        return f"{exc}\r\n"
+    return "posted\r\n" + cmd_wall(sess, [])
 
 
 def cmd_verify(sess: Session, args: list[str]) -> str:
@@ -336,7 +587,7 @@ def cmd_bye(sess: Session, args: list[str]) -> str:
         return "already on grayline\r\n"
     text = pop_to_previous(sess)
     if sess.host == "grayline":
-        return pad_card(sess.user or "guest")
+        return return_to_pad(sess.user or "guest")
     return text
 
 
@@ -369,36 +620,154 @@ def _grant_count(name: str) -> int:
     return total
 
 
-def _format_fingers(rows: list[Session]) -> str:
-    blocks: list[str] = []
+def _finger_tty(person: Session) -> str:
+    if person.host in {"", "grayline"}:
+        return "pad"
+    if person.host == "tymnet":
+        return "tym"
+    if person.host in {"bec", "bec-mf"}:
+        return "bec"
+    return (person.host or "pad")[:8]
+
+
+def _finger_where(person: Session) -> str:
+    if person.host in {"", "grayline"}:
+        return "PAD"
+    if person.host == "terminal-addiction":
+        return "TA"
+    return person.host.upper()
+
+
+def _finger_idle_seconds(person: Session) -> int:
+    return max(0, int(time.monotonic() - person.last_active))
+
+
+def _finger_idle_short(seconds: int) -> str:
+    if seconds < 60:
+        return ""
+    minutes = seconds // 60
+    if minutes < 60:
+        return str(minutes)
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}:{minutes:02d}"
+    return f"{hours // 24}d"
+
+
+def _finger_idle_long(seconds: int) -> str:
+    if seconds < 60:
+        return ""
+    minutes = seconds // 60
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}:{minutes:02d}"
+    days, hours = divmod(hours, 24)
+    unit = "day" if days == 1 else "days"
+    return f"{days} {unit} {hours}:{minutes:02d}"
+
+
+def _finger_when(stamp: float) -> str:
+    if stamp <= 0:
+        return "*"
+    return datetime.fromtimestamp(stamp).strftime("%a %b %d %H:%M")
+
+
+def _finger_last_login(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "*"
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    return moment.astimezone().strftime("%a %b %d %H:%M")
+
+
+def _finger_short(rows: list[Session]) -> str:
+    lines = ["Login            Name             TTY      Idle  Where"]
     for person in rows:
         name = person.user or "guest"
         shown = "GUEST" if name.lower() == "guest" else name
-        dest = "PAD" if person.host in {"grayline", "tymnet"} else person.host
-        blocks.append(
-            f"IDENT    {shown}\r\n"
-            f"DEST     {dest}\r\n"
-            f"GRANTS   {_grant_count(name)}"
+        idle = _finger_idle_short(_finger_idle_seconds(person))
+        lines.append(
+            f"{shown:<16}{shown:<16}{_finger_tty(person):<8} {idle:>5}  {_finger_where(person)}"
         )
-    return "\r\n\r\n".join(blocks) + "\r\n"
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _finger_long(name: str, rows: list[Session], account) -> str:
+    shown = "GUEST" if name.lower() == "guest" else name
+    lines = [f"Login: {shown:<16} Name: {shown}"]
+    lines.append(f"Directory: (none)               Shell: GL>")
+    if rows:
+        for person in rows:
+            since = _finger_when(person.login_at)
+            idle_sec = _finger_idle_seconds(person)
+            idle = _finger_idle_long(idle_sec)
+            tty = _finger_tty(person)
+            where = _finger_where(person)
+            if idle:
+                lines.append(f"On since {since} on {tty} ({where}), idle {idle}")
+            else:
+                lines.append(f"On since {since} on {tty} ({where})")
+    else:
+        lines.append("Not logged in.")
+        if account is not None:
+            lines.append(f"Last login {_finger_last_login(account.last_login)}")
+    mail = email_of(name) if account is not None else ""
+    if mail:
+        lines.append(f"Mail: {mail}")
+    else:
+        lines.append("No Mail.")
+    plan = note_of(name) if account is not None else ""
+    if plan.strip():
+        lines.append("Plan:")
+        for plan_line in plan.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+            lines.append(plan_line)
+    else:
+        lines.append("No Plan.")
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _finger_host(name: str) -> str | None:
+    if name in {"bec", "big-evil"}:
+        return "CIRCUIT  BEC\r\nBAUD     1200\r\nSTATE    UP\r\n"
+    if name in {"tymnet"}:
+        return "CIRCUIT  TYMNET\r\nBAUD     T1\r\nSTATE    UP\r\n"
+    if name in {"ta", "terminal-addiction"}:
+        return "CIRCUIT  TA\r\nBAUD     2400\r\nSTATE    OFFLINE\r\n"
+    return None
 
 
 def cmd_finger(sess: Session, args: list[str]) -> str:
     if sess.host == "grayline" and not site.verb_enabled("finger"):
         return "finger: not found\r\n"
     if not args:
-        return _format_fingers([sess])
+        rows = sorted(live_sessions(), key=lambda other: (other.user or "", other.sid))
+        if not rows:
+            return "No one logged in.\r\n"
+        return _finger_short(rows)
     name = args[0].lower()
-    if name in {"bec", "big-evil"}:
-        return "CIRCUIT  BEC\r\nBAUD     1200\r\nSTATE    UP\r\n"
+    host_blurb = _finger_host(name)
+    if host_blurb is not None:
+        return host_blurb
     if name in {"sysop", "admin"}:
-        return f"IDENT    {name}\r\nMAIL     not accepting mail\r\n"
-    if not valid_name(name):
-        return f"finger: {name}: not found\r\n"
-    found = [other for other in live_sessions() if other.user == name]
-    if not found:
-        return f"finger: {name}: not on the wire\r\n"
-    return _format_fingers(found)
+        return (
+            f"Login: {name:<16} Name: {name}\r\n"
+            "Directory: (none)               Shell: GL>\r\n"
+            "Not logged in.\r\n"
+            "Mail: not accepting mail\r\n"
+            "No Plan.\r\n"
+        )
+    if name != "guest" and not valid_name(name):
+        return f"finger: {name}: no such user.\r\n"
+    account = get_account(name) if name != "guest" else None
+    found = [other for other in live_sessions() if (other.user or "").lower() == name]
+    if account is None and name != "guest" and not found:
+        return f"finger: {name}: no such user.\r\n"
+    if name == "guest" and not found:
+        return "finger: guest: no such user.\r\n"
+    return _finger_long(name, found, account)
 
 
 def cmd_hosts(sess: Session, args: list[str]) -> str:
@@ -440,7 +809,7 @@ def cmd_connect(sess: Session, args: list[str]) -> str:
             sess.hops = ["grayline"]
             sess.baud_stack = [T1_BAUD]
             sess.baud_now = T1_BAUD
-        return pad_card(sess.user or "guest")
+        return return_to_pad(sess.user or "guest")
     known = {host.name: host for host in get_pack(sess.host).hosts}
     host = known.get(name)
     if host is None:
@@ -717,6 +1086,8 @@ def cmd_logout(sess: Session, args: list[str]) -> str:
     sess.previous_host = ""
     sess.room = ""
     sess.seen_look = False
+    sess.login_at = 0.0
+    _clear_mail_draft(sess)
     return banner() + login_prompt()
 
 
@@ -726,7 +1097,11 @@ COMMANDS: dict[str, Callable[[Session, list[str]], str]] = {
     "who": cmd_who,
     "motd": cmd_motd,
     "news": cmd_news,
+    "mail": cmd_mail,
+    "wall": cmd_wall,
     "date": cmd_date,
+    "clear": cmd_clear,
+    "clr": cmd_clear,
     "full": cmd_full,
     "status": cmd_status,
     "map": cmd_map,
@@ -736,7 +1111,6 @@ COMMANDS: dict[str, Callable[[Session, list[str]], str]] = {
     "host": cmd_hosts,
     "ls": cmd_ls,
     "dir": cmd_ls,
-    "mail": cmd_mail,
     "verify": cmd_verify,
     "connect": cmd_connect,
     "bye": cmd_bye,
@@ -764,6 +1138,9 @@ def submit(sess: Session) -> str:
     sess.draft = ""
     if sess.user is None:
         return login_line(sess, text)
+    if sess.host == "grayline" and sess.phase.startswith("mail"):
+        body = mail_line(sess, text)
+        return body + prompt_for(sess)
     if sess.host == "grayline" and sess.phase.startswith("profile"):
         body = profile_line(sess, text)
         if sess.user is None:
