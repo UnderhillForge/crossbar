@@ -68,6 +68,7 @@ _HELP_TOPICS = {
     "clr": "clear the screen",
     "logout": "clear your name",
     "bec": "orientation circuit, 1200, outside plant",
+    "mudproto": "MudProto door, 9600 — CONNECT MUDPROTO",
     "claim": "claim a flag for the linked ps1",
     "pschain": "nodes, height, difficulty, hash, health",
     "leaders": "top 20 by accepted claims",
@@ -279,7 +280,15 @@ def cmd_full(sess: Session, args: list[str]) -> str:
         [
             pane("PAD", [" NODE GL-01", f" BAUD {baud}"]),
             pane("IDENT", [f" {who}"]),
-            pane("GATES", [" BEC 1200 UP", " TA 2400 OFFLINE", " TYMNET UP"]),
+            pane(
+                "GATES",
+                [
+                    " BEC 1200 UP",
+                    " TA 2400 OFFLINE",
+                    " TYMNET UP",
+                    " MUDPROTO 9600",
+                ],
+            ),
             "NEWS  LOCAL BULLETIN",
         ]
     )
@@ -1068,6 +1077,11 @@ def cmd_bye(sess: Session, args: list[str]) -> str:
     pack = get_pack(sess.host)
     if pack.name in {"bec", "bec-mf"}:
         return v7.hangup(sess)
+    if pack.name == "mudproto":
+        from crossbar import mudproto
+
+        mudproto.request_hangup(sess)
+        return ""
     if pack.name == "grayline":
         return "already on grayline\r\n"
     text = pop_to_previous(sess)
@@ -1110,6 +1124,8 @@ def _finger_tty(person: Session) -> str:
         return "pad"
     if person.host == "tymnet":
         return "tym"
+    if person.host == "mudproto":
+        return "mud"
     if person.host in {"bec", "bec-mf"}:
         return "bec"
     return (person.host or "pad")[:8]
@@ -1120,6 +1136,8 @@ def _finger_where(person: Session) -> str:
         return "PAD"
     if person.host == "terminal-addiction":
         return "TA"
+    if person.host == "mudproto":
+        return "MUDPROTO"
     return person.host.upper()
 
 
@@ -1269,6 +1287,7 @@ _CONNECT_ALIAS = {
     "big-evil": "bec",
     "ta": "terminal-addiction",
     "gl": "grayline",
+    "mud": "mudproto",
 }
 
 
@@ -1309,6 +1328,10 @@ def cmd_connect(sess: Session, args: list[str]) -> str:
         return cmd_already(sess, [])
     if name == "bec":
         return "DIALING 1200...\r\n" + v7.enter(sess)
+    if name == "mudproto":
+        from crossbar import mudproto
+
+        return mudproto.begin_dial(sess)
     return hop(sess, name)
 
 
@@ -1648,6 +1671,11 @@ def submit(sess: Session) -> str:
         if sess.v7_phase == "pico":
             return body
         return body + prompt_for(sess)
+    if sess.host == "mudproto":
+        from crossbar import mudproto
+
+        # No pad prompt — MudProto drives name:/password: itself.
+        return mudproto.on_line(sess, text)
     stripped = text.strip()
     if not stripped:
         return prompt_for(sess)

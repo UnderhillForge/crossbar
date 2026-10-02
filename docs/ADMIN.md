@@ -62,6 +62,32 @@ WALL posts live in `data/text/wall.asc` (not SQLite). `WALL <text>` appends one 
 
 GROUPS are local forums in `grayline.db` (not `news.asc`). Seed groups: `grayline.general`, `grayline.doors`, `grayline.sysop`. Pad POST is for registered handles; `grayline.sysop` is read-only on the pad. Packet peering and NNTP uplink are not wired yet — see `docs/design-groups.md`.
 
+## MudProto door
+
+`CONNECT MUDPROTO` opens one TCP connection to MudProto and pipes the xterm through it. MudProto is a **separate process** — start it before players dial.
+
+```bash
+MUDPROTO_BIND=127.0.0.1 MUDPROTO_PORT=4000 python mudproto_server/core_logic/server.py
+```
+
+Crossbar env (defaults shown):
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `MUDPROTO_HOST` | `127.0.0.1` | Door address Grayline dials |
+| `MUDPROTO_PORT` | `4000` | Must stay loopback / private. Do not publish. TLS stays on Grayline. |
+
+Health check (ops):
+
+```python
+from crossbar import mudproto
+ok, banner = mudproto.health()
+```
+
+Expect a banner containing `MUDPROTO` / `name:`. Grayline account ≠ MUD character; Crossbar never sends `!name` / `!account` or a pad handle. Hangup: socket close, line `~.` or `QUIT`, or pad `bye`/`^C`. `/quit` is MudProto’s own command and is not disconnect.
+
+See the MudProto project `README.md` → Greyline door section for the server side.
+
 ## Not on :8080
 
 Do not add a link, a comment in the pad banner, or a `CONNECT admin` host. The public page is the terminal and nothing else.

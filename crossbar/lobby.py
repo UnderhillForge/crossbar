@@ -135,7 +135,8 @@ def pad_map_text() -> str:
         "GL-01\r\n"
         "  ├─ BEC       1200  UP\r\n"
         "  ├─ TA        2400  OFFLINE\r\n"
-        "  └─ TYMNET    T1    UP\r\n"
+        "  ├─ TYMNET    T1    UP\r\n"
+        "  └─ MUDPROTO  9600  UP\r\n"
     )
 
 
@@ -167,6 +168,7 @@ PAD_WORDS = (
     "user_list",
     "bec",
     "tymnet",
+    "mudproto",
     "ta",
     "terminal-addiction",
 )

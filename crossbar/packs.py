@@ -103,11 +103,22 @@ PACKS: dict[str, Pack] = {
         hosts=(
             HostRef("bec", True, 1200),
             HostRef("tymnet", True, 9600),
+            HostRef("mudproto", True, 9600),
             HostRef("terminal-addiction", False, 2400),
         ),
         banner="CONNECTED  T1\r\n",
         here_line="Orientation circuit: CONNECT BEC.",
         baud_max=1_544_000,
+    ),
+    "mudproto": Pack(
+        name="mudproto",
+        up=True,
+        commands=frozenset({"bye", "quit"}),
+        hosts=(HostRef("mudproto", True, 9600), HostRef("grayline", True)),
+        banner="",
+        here_line="MudProto door",
+        baud_max=9600,
+        era="",
     ),
     "tymnet": Pack(
         name="tymnet",

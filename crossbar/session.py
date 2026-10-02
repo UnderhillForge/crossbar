@@ -90,6 +90,12 @@ class Session:
     group_art: int = 0
     group_subject: str = ""
     group_body_lines: list[str] = field(default_factory=list)
+    # MudProto TCP door (external process). Never carries a Grayline handle.
+    mud_writer: object | None = field(default=None, repr=False)
+    mud_task: object | None = field(default=None, repr=False)
+    mud_pending_connect: bool = False
+    mud_pending_hangup: bool = False
+    mud_closing: bool = False
 
 
 # sid -> Session. Process-local. Restart clears this dict.

@@ -662,7 +662,7 @@ class CommandTests(unittest.TestCase):
         self.assertIn("OFFLINE", listing)
         self.assertEqual(
             [host.name for host in HOSTS],
-            ["bec", "tymnet", "terminal-addiction"],
+            ["bec", "tymnet", "mudproto", "terminal-addiction"],
         )
 
         sess.login_at = time.time()

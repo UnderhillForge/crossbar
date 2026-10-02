@@ -1,4 +1,9 @@
-"""Runtime settings. The process listens on 127.0.0.1:8080 only."""
+"""Runtime settings. The process listens on 127.0.0.1:8080 only.
+
+MudProto door (CONNECT MUDPROTO) reads MUDPROTO_HOST / MUDPROTO_PORT
+(defaults 127.0.0.1:4000). That port must stay loopback — TLS stays on
+Grayline. See crossbar/mudproto.py and docs/ADMIN.md.
+"""
 
 from __future__ import annotations
 

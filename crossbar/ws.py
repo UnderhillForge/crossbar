@@ -94,6 +94,14 @@ def _recall(sess: Session, way: str) -> str:
 
 def push(sess: Session, data: str) -> str:
     """Fold keystrokes into the line buffer. Backspace echoes \\b \\b."""
+    if sess.host == "mudproto" and "\x03" in data:
+        from crossbar import mudproto
+
+        sess.line = ""
+        sess.hist_i = None
+        sess.draft = ""
+        mudproto.request_hangup(sess)
+        return "^C\r\n"
     if sess.host in {"bec", "bec-mf"} and "\x03" in data:
         from crossbar import v7
 
@@ -265,6 +273,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     if websocket.client is not None:
         sess.peer_ip = websocket.client.host or ""
     await _attach(sess, websocket)
+
+    async def _mud_send(chunk: str) -> None:
+        if chunk and sess.socket is websocket:
+            await _paced_send(websocket, chunk, sess.baud_now)
+
     try:
         if sess.user:
             await websocket.send_text(hello(sess))
@@ -306,9 +319,27 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await asyncio.sleep(delay)
             if text and sess.socket is websocket:
                 await _paced_send(websocket, text, sess.baud_now)
+            if sess.mud_pending_connect:
+                from crossbar import mudproto
+
+                dialed = await mudproto.attach(sess, _mud_send)
+                if dialed and sess.socket is websocket:
+                    await _paced_send(websocket, dialed, sess.baud_now)
+            if sess.mud_pending_hangup:
+                from crossbar import mudproto
+
+                sess.mud_pending_hangup = False
+                dropped = await mudproto.hangup(sess, announce=True)
+                if dropped and sess.socket is websocket:
+                    await _paced_send(websocket, dropped, sess.baud_now)
     except WebSocketDisconnect:
         return
     except Exception:
         logger.exception("session failed")
     finally:
+        if sess.host == "mudproto" or sess.mud_writer is not None or sess.mud_task is not None:
+            from crossbar import mudproto
+
+            with contextlib.suppress(Exception):
+                await mudproto.hangup(sess, announce=False)
         _detach(sess, websocket)

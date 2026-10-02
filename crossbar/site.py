@@ -14,6 +14,7 @@ _DEFAULT_HOSTS = (
     ("bec", "BEC", "ORIENTATION  •  BEC OUTSIDE PLANT", "1200", "UP"),
     ("terminal-addiction", "TA", "TERMINAL ADDICTION", "2400", "OFFLINE"),
     ("tymnet", "TYMNET", "CARRIER HOP", "T1", "UP"),
+    ("mudproto", "MUDPROTO", "MUDPROTO DOOR", "9600", "UP"),
 )
 
 
