@@ -114,6 +114,11 @@ def help_override() -> str | None:
     return text if isinstance(text, str) else None
 
 
+def news_override() -> str | None:
+    text = load().get("news")
+    return text if isinstance(text, str) else None
+
+
 def set_text(key: str, value: str) -> None:
     data = load()
     if value.strip():

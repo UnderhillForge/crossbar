@@ -78,6 +78,13 @@ class Session:
     # Guest bec edits live here and are dropped on logout. Registered users use disk.
     v7_store: dict = field(default_factory=dict)
     peer_ip: str = ""
+    # Wall-clock time.time() when this handle reached the pad (for finger).
+    login_at: float = 0.0
+    # Pad mail compose draft (cleared on cancel / logout / send).
+    mail_to: str = ""
+    mail_subject: str = ""
+    mail_body_lines: list[str] = field(default_factory=list)
+    mail_reply_to: int | None = None
 
 
 # sid -> Session. Process-local. Restart clears this dict.
@@ -125,17 +132,20 @@ def prompt_for(sess: Session) -> str:
             return "LOGON: "
         return "login: "
     if sess.host == "grayline":
-        if sess.phase == "profile":
-            return "GL>PROF_CON> "
+        from crossbar.lobby import pad_path_for, render_pad_prompt
+
+        base = render_pad_prompt(sess.user, pad_path_for(sess.phase))
         if sess.phase == "profile_email":
-            return "GL>PROF_CON> EMAIL: "
+            return base + "EMAIL: "
         if sess.phase == "profile_password":
-            return "GL>PROF_CON> PASSWORD: "
+            return base + "PASSWORD: "
         if sess.phase == "profile_password2":
-            return "GL>PROF_CON> CONFIRM: "
+            return base + "CONFIRM: "
         if sess.phase == "profile_ps1":
-            return "GL>PROF_CON> PS1: "
-        return "GL> "
+            return base + "PS1: "
+        if sess.phase == "mail_subject":
+            return base + "Subject: "
+        return base
     return f"{sess.user}@{sess.host}> "
 
 
