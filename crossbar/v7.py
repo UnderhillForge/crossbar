@@ -671,6 +671,10 @@ def hangup(sess: Session) -> str:
     sess.v7_gid = -1
     sess.v7_pending = ""
     sess.v7_path = "/bin:/usr/bin"
+    if sess.host == "grayline":
+        from crossbar.lobby import return_to_pad
+
+        return "NO CARRIER\r\n" + return_to_pad(sess.user or "guest")
     return "NO CARRIER\r\n"
 
 

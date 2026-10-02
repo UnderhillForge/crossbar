@@ -149,12 +149,23 @@ def push(sess: Session, data: str) -> str:
                 if sess.phase.startswith("profile"):
                     sess.phase = "shell"
                     sess.pending_password = ""
+                if sess.phase.startswith("mail"):
+                    from crossbar.commands import _clear_mail_draft
+
+                    _clear_mail_draft(sess)
+                    sess.phase = "shell"
                 out.append("^C\r\n" + prompt_for(sess))
             continue
-        if ch == "\t" and sess.user and sess.host == "grayline" and not sess.phase.startswith("profile"):
+        if (
+            ch == "\t"
+            and sess.user
+            and sess.host == "grayline"
+            and not sess.phase.startswith("profile")
+            and not sess.phase.startswith("mail")
+        ):
             from crossbar.lobby import pad_tab
 
-            echo, sess.line = pad_tab(sess.line)
+            echo, sess.line = pad_tab(sess.line, prompt_for(sess))
             out.append(echo)
             continue
         if ch == "\r" or ch == "\n":
