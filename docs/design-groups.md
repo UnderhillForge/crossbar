@@ -78,6 +78,7 @@ Local store is source of truth. Sync layers import/export; they do not bypass pa
 ```text
 GROUPS                     list groups (+ unread when logged in)
 GROUPS LIST
+GROUPS NEW                 unread headers across groups (since last read)
 GROUPS <name>              select current group
 GROUPS GROUP <name>        same
 GROUPS HEADERS [n]         recent headers (default 20)

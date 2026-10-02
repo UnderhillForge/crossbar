@@ -120,6 +120,44 @@ class GroupsApiTests(unittest.TestCase):
         self.assertEqual(groups.unread_count("ada", "grayline.doors"), 0)
         self.assertEqual(groups.unread_count("guest", "grayline.doors"), 0)
 
+    def test_groups_new_lists_unread(self) -> None:
+        from crossbar.session import SESSIONS, get_session
+        from crossbar.ws import push
+
+        groups.post(
+            group="grayline.general",
+            from_handle="bob",
+            subject="catch me",
+            body="hello ada",
+        )
+        groups.post(
+            group="grayline.doors",
+            from_handle="bob",
+            subject="door note",
+            body="also new",
+        )
+        SESSIONS.clear()
+        ada = get_session("groups-new-ada")
+        ada.user = "ada"
+        ada.host = "grayline"
+        ada.phase = "shell"
+        shown = push(ada, "groups new\r")
+        self.assertIn("GROUPS NEW", shown)
+        self.assertIn("grayline.general", shown)
+        self.assertIn("catch me", shown)
+        self.assertIn("grayline.doors", shown)
+        self.assertIn("door note", shown)
+        push(ada, "groups grayline.general\r")
+        push(ada, "groups read 1\r")
+        again = push(ada, "groups new\r")
+        self.assertNotIn("catch me", again)
+        self.assertIn("door note", again)
+        guest = get_session("groups-new-guest")
+        guest.user = "guest"
+        guest.host = "grayline"
+        guest.phase = "shell"
+        self.assertIn("logon required", push(guest, "groups new\r"))
+
     def test_pad_groups_flow(self) -> None:
         from crossbar.session import SESSIONS, get_session
         from crossbar.ws import push

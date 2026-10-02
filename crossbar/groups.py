@@ -275,6 +275,39 @@ def headers(group: str, *, limit: int = HEADERS_DEFAULT) -> list[ArticleHeader]:
     return [_header_from_row(row) for row in rows]
 
 
+def unread_headers(
+    handle: str,
+    *,
+    limit: int = 50,
+    group: str | None = None,
+) -> list[tuple[str, ArticleHeader]]:
+    """Unread article headers oldest-first. Optional single-group filter."""
+    name = (handle or "").strip().lower()
+    if not name or name == "guest":
+        return []
+    cap = max(1, min(int(limit), 100))
+    if group:
+        keys = [normalize_group_name(group)]
+        if get_group(keys[0]) is None:
+            raise ValueError("no such group")
+    else:
+        keys = [info.name for info in list_groups()]
+    out: list[tuple[str, ArticleHeader]] = []
+    for key in keys:
+        seen = last_read(name, key)
+        rows = connect().execute(
+            "SELECT number, subject, from_handle, date_sent, message_id "
+            "FROM articles WHERE group_name = ? AND number > ? "
+            "ORDER BY number ASC",
+            (key, seen),
+        ).fetchall()
+        for row in rows:
+            out.append((key, _header_from_row(row)))
+            if len(out) >= cap:
+                return out
+    return out
+
+
 def get_article(group: str, number: int) -> Article | None:
     key = normalize_group_name(group)
     row = connect().execute(
