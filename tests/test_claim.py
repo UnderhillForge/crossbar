@@ -39,6 +39,11 @@ def _sess(name: str) -> Session:
     return sess
 
 
+
+def pad_prompt_end(user: str = "ada", path: str = "main") -> str:
+    return f"{user}@grayline/{path}> "
+
+
 class ClaimTests(unittest.TestCase):
     def test_missing_link_does_not_call_the_node(self) -> None:
         sess = _sess("nolink")
@@ -156,31 +161,31 @@ class ClaimTests(unittest.TestCase):
         sess.phase = "shell"
         opened = push(sess, "profile_config\r")
         self.assertIn("1 EMAIL", opened)
-        self.assertTrue(opened.endswith("GL>PROF_CON> "))
+        self.assertTrue(opened.endswith(pad_prompt_end("editor", "profile")))
         asked = push(sess, "1\r")
         self.assertEqual(sess.phase, "profile_email")
-        self.assertTrue(asked.endswith("GL>PROF_CON> EMAIL: "))
+        self.assertTrue(asked.endswith(pad_prompt_end("editor", "profile") + "EMAIL: "))
         self.assertNotIn("login:", asked)
         saved = push(sess, "editor@example.com\r")
         self.assertIn("email saved", saved)
         self.assertIn("editor@example.com", saved)
-        self.assertTrue(saved.endswith("GL>PROF_CON> "))
+        self.assertTrue(saved.endswith(pad_prompt_end("editor", "profile")))
         self.assertEqual(email_of("editor"), "editor@example.com")
         secret = push(sess, "2\rsecret99\rsecret99\r")
         self.assertNotIn("secret99", secret)
         self.assertIn("password saved", secret)
-        self.assertTrue(secret.endswith("GL>PROF_CON> "))
+        self.assertTrue(secret.endswith(pad_prompt_end("editor", "profile")))
         linked = push(sess, "3\r")
-        self.assertTrue(linked.endswith("GL>PROF_CON> PS1: "))
+        self.assertTrue(linked.endswith(pad_prompt_end("editor", "profile") + "PS1: "))
         menu = push(sess, "\r")
-        self.assertTrue(menu.endswith("GL>PROF_CON> "))
+        self.assertTrue(menu.endswith(pad_prompt_end("editor", "profile")))
         self.assertEqual(sess.phase, "profile")
         back = push(sess, "q\r")
-        self.assertTrue(back.endswith("GL> "))
+        self.assertTrue(back.endswith(pad_prompt_end("editor")))
         self.assertEqual(sess.phase, "shell")
         push(sess, "profile_config\r")
         cancelled = push(sess, "\x03")
-        self.assertTrue(cancelled.endswith("GL> "))
+        self.assertTrue(cancelled.endswith(pad_prompt_end("editor")))
         self.assertEqual(sess.phase, "shell")
 
     def test_chain_is_not_a_lobby_command(self) -> None:
@@ -332,12 +337,20 @@ class ClaimTests(unittest.TestCase):
             text = cmd_pschain(sess, [])
         finally:
             chainrpc.call = original
+        local_tag = chainrpc._peer_tag(
+            {"address": "127.0.0.1", "port": 3144, "host": "pisecure.local"}
+        )
+        hint_tag = chainrpc._peer_tag({"address": secret, "port": 3144, "hint": True})
         self.assertIn("HEIGHT  12", text)
         self.assertIn("DIFFICULTY  9", text)
         self.assertIn("HASH  " + "ab" * 32, text)
         self.assertIn("NODES  2", text)
-        self.assertIn("NODE  pisecure.local  127.0.0.1:3144", text)
-        self.assertIn(f"HINT  {secret}:3144", text)
+        self.assertIn(f"NODE  {local_tag}", text)
+        self.assertIn(f"HINT  {hint_tag}", text)
+        self.assertNotIn("127.0.0.1", text)
+        self.assertNotIn(secret, text)
+        self.assertNotIn("3144", text)
+        self.assertNotIn("pisecure.local", text)
         self.assertIn("HEALTH  UP", text)
         self.assertIn("HASHRATE  unavailable", text)
 
@@ -413,13 +426,24 @@ class ClaimTests(unittest.TestCase):
         finally:
             chainrpc.call = original
             chainrpc._http_json = http_orig
+        lab_tag = chainrpc._peer_tag(
+            {
+                "node_id": "pisecured-lab",
+                "p2p_host": "203.0.113.10",
+                "rpc_port": 3144,
+                "status": "active",
+            }
+        )
         self.assertIn("HEIGHT  1171", board)
         self.assertIn("DIFFICULTY  16", board)
         self.assertIn("HASH  " + "ab" * 32, board)
         self.assertIn("HASHRATE  unavailable", board)
         self.assertIn("HEALTH  Poor  15", board)
         self.assertIn("NODES  1", board)
-        self.assertIn("pisecured-lab  203.0.113.10:3144  active", board)
+        self.assertIn(f"NODE  {lab_tag}  active", board)
+        self.assertNotIn("203.0.113.10", board)
+        self.assertNotIn("3144", board)
+        self.assertNotIn("pisecured-lab", board)
 
     def test_profile_stores_email_password_and_ps1(self) -> None:
         from crossbar.accounts import authenticate, email_of
