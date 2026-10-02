@@ -11,6 +11,7 @@ Terminal chrome under data/text/:
   prompt.asc        grayline pad prompt; [time] [user]@[host]/[path]>
   news.asc          local NEWS bulletin (NNTP later)
   motd.asc          message of the day
+  wall.asc          WALL posts (append via WALL <text>; edit over SSH)
 """
 
 from __future__ import annotations

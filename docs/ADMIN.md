@@ -58,6 +58,8 @@ The console may read localhost pisecured the same way the pad does. It does not 
 
 Mail broadcasts to pad accounts as From `sysop` (pad-local letters, not SMTP). Audience is all `ok` accounts or an explicit handle list. Empty audience does not insert a message. Success writes an audit line `mail-broadcast`.
 
+WALL posts live in `data/text/wall.asc` (not SQLite). `WALL <text>` appends one line; the pad shows the last 10. Edit or trim that file over SSH when needed. Line format: `<UTC ISO8601> <handle> <text>`.
+
 ## Not on :8080
 
 Do not add a link, a comment in the pad banner, or a `CONNECT admin` host. The public page is the terminal and nothing else.

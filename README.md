@@ -88,7 +88,7 @@ These three commands exist only at `GL>`, and only for a real account. Guest get
 | `leaders` | Top 20 accounts by accepted claims on this hub. Ties share a rank. |
 | `user_list` | Every registered account, its leaderboard rank when it has claims, and last login. |
 | `mail` | Pad-local letters for registered handles: `MAIL LIST/READ/SEND/REPLY/FWD/DEL/ARCHIVE`. Guest: `logon required`. Unread count prints after `CIRCUIT OPEN` on login. Operator broadcasts as `sysop` from `/o/mail`. See `docs/design-mail.md`. |
-| `wall` | Last 10 one-line posts. Anyone can read; registered handles `WALL <text>` to write (72 chars). |
+| `wall` | Last 10 one-line posts from `data/text/wall.asc`. Anyone can read; registered handles `WALL <text>` to append (72 chars). Operators may trim or edit the file over SSH. |
 
 Node replies that Crossbar prints as one line: `unknown flag`, `already claimed`, `flag exhausted`, `flag expired`, `unlimited flag cannot pay`. A missing flag method is `flags are not on this node yet`, and the account is not marked claimed. A missing `getchaininfo` is `getchaininfo is not on this node yet`. `createflag` is not a lobby command.
 

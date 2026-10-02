@@ -81,10 +81,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS accounts_wallet_unique ON accounts(wallet) WHERE wallet != ''"
     )
     from crossbar import mail
-    from crossbar import wall
 
     mail.ensure_schema(conn)
-    wall.ensure_schema(conn)
 
 
 def init_db() -> None:
