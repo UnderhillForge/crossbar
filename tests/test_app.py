@@ -84,7 +84,7 @@ class CommandTests(unittest.TestCase):
             helped,
             load_asc("menu_header") + "\r\n" + load_asc("main_menu"),
         )
-        self.assertIn("[MENU]", helped)
+        self.assertIn("[.DEV]", helped)
         self.assertIn("[Main]", helped)
         self.assertIn("[System]", helped)
         self.assertIn("HOSTS", helped)

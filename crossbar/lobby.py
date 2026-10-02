@@ -50,14 +50,22 @@ def _strip_sauce(data: bytes) -> bytes:
 
 
 def _decode_chrome(data: bytes, *, ans: bool) -> str:
+    """Decode chrome bytes.
+
+    Prefer UTF-8 when valid (Unicode block art + SGR). Classic DOS .ans that is
+    not valid UTF-8 falls back to CP437.
+    """
     data = _strip_sauce(data)
-    order = ("cp437", "utf-8", "latin-1") if ans else ("utf-8", "cp437", "latin-1")
-    for enc in order:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if ans:
         try:
-            return data.decode(enc)
+            return data.decode("cp437")
         except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", "replace")
+            pass
+    return data.decode("latin-1")
 
 
 def _load_path(cache_key: str, path: Path, *, ans: bool) -> str:
