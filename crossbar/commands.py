@@ -641,7 +641,10 @@ def cmd_wall(sess: Session, args: list[str]) -> str:
             lines.append("(empty)")
         else:
             for handle, body, created in reversed(posts):
-                lines.append(f"{_wall_when(created)}  {handle}: {body}")
+                if not handle:
+                    lines.append(body)
+                else:
+                    lines.append(f"{_wall_when(created)}  {handle}: {body}")
         lines.append("WALL <text>  write one line (registered)")
         return "\r\n".join(lines) + "\r\n"
     if not sess.user or sess.user == "guest" or get_account(sess.user) is None:
