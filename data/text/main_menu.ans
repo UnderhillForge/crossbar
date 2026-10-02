@@ -1,0 +1,15 @@
+[1;33m[Main]                          [System][0m
+    [1;36mHOSTS[0m circuits              PROFILE_CONFIG
+    [1;36mCONNECT[0m <name>                CLAIM       <flag>
+    [1;36mSTATUS[0m this pad              PSCHAIN     Nodes hash health
+    [1;36mWALL[0m last 10               LEADERS
+    [1;36mWHO[0m stations              USER_LIST
+    [1;36mFINGER[0m <id>
+    [1;36mNEWS[0m bulletin
+    [1;36mMOTD[0m
+    [1;36mMAIL[0m mail app
+    [1;36mGROUPS[0m groups app
+    [1;36mDATE[0m
+    [1;36mCLEAR[0m clr
+[1;36m    ANSI[0m      on|off
+    [1;36mBYE[0m

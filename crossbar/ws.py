@@ -30,7 +30,7 @@ def hello(sess: Session) -> str:
 
             return header_line(sess.user) + prompt_for(sess)
         return f"resumed {sess.user}@{sess.host}\r\n{prompt_for(sess)}"
-    return banner() + login_prompt()
+    return banner(ansi=sess.ansi_ok) + login_prompt()
 
 
 def _params(text: str) -> bool:
@@ -222,10 +222,10 @@ async def _wait_key(ws: WebSocket, delay: float) -> bool:
     return True
 
 
-async def play_boot(ws: WebSocket) -> None:
+async def play_boot(ws: WebSocket, *, ansi: bool = True) -> None:
     """Carrier lines, then the banner. After CONNECT, any key skips the rest."""
     armed = False
-    for text, delay, _kind in boot_steps():
+    for text, delay, _kind in boot_steps(ansi=ansi):
         await ws.send_text(text)
         if "CONNECT" in text:
             armed = True
@@ -286,7 +286,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             sess.pending_handle = ""
             sess.pending_password = ""
             sess.line = ""
-            await play_boot(websocket)
+            await play_boot(websocket, ansi=sess.ansi_ok)
             if sess.socket is not websocket:
                 return
             sess.phase = "login"

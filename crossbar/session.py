@@ -52,7 +52,8 @@ class Session:
     hops: list[str] = field(default_factory=list)
     baud_stack: list[int] = field(default_factory=list)
     lead_sleep: float = 0.0
-    ansi_ok: bool = False
+    # Web xterm renders ANSI; prefer .ans chrome when True. ANSI OFF disables.
+    ansi_ok: bool = True
     v7_phase: str = ""
     v7_user: str = ""
     v7_uid: int = -1
@@ -145,7 +146,11 @@ def prompt_for(sess: Session) -> str:
     if sess.host == "grayline":
         from crossbar.lobby import pad_path_for, render_pad_prompt
 
-        base = render_pad_prompt(sess.user, pad_path_for(sess.phase))
+        base = render_pad_prompt(
+            sess.user,
+            pad_path_for(sess.phase),
+            ansi=sess.ansi_ok,
+        )
         if sess.phase == "profile_email":
             return base + "EMAIL: "
         if sess.phase == "profile_password":

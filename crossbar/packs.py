@@ -48,6 +48,7 @@ _GRAYLINE_COMMANDS = frozenset(
         "wall",
         "full",
         "status",
+        "ansi",
         "bye",
         "map",
         "login",

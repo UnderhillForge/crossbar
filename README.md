@@ -45,7 +45,7 @@ PACKET ASSEMBER/DISSASEMBLER READY
 LOGON:
 ```
 
-The same welcome paint reprints when a hop drops back on the pad (`bye`, BEC hangup, or `connect grayline`). `help` / `?` print `data/text/menu_header.asc` above `data/text/main_menu.asc`. Edit those files to change the menu without a code change. An operator help override still replaces the body when set.
+The same welcome paint reprints when a hop drops back on the pad (`bye`, BEC hangup, or `connect grayline`). `help` / `?` print `data/text/menu_header` above `main_menu`. Drop matching `.ans` files beside the `.asc` chrome to enable color (CP437/SAUCE-aware); ANSI is on by default in the web xterm — `ANSI OFF` forces monochrome `.asc`. An operator help override still replaces the body when set.
 
 At `LOGON:`:
 

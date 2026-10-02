@@ -57,12 +57,13 @@ _HELP_TOPICS = {
     "connect": "open a circuit. orientation is CONNECT BEC",
     "date": "pad clock",
     "motd": "message of the day",
-    "news": "pad bulletin",
+    "news": "pad bulletin (.asc / .ans)",
     "mail": "mail app: MAIL enters; q quits",
     "groups": "groups app: GROUPS enters; q quits",
     "wall": "last 10 wall lines; write one line",
     "full": "baud, handle, destination",
     "status": "baud, handle, destination",
+    "ansi": "ANSI ON|OFF — color menus when .ans exists",
     "bye": "back along the circuit",
     "clear": "clear the screen",
     "clr": "clear the screen",
@@ -214,7 +215,7 @@ def cmd_help(sess: Session, args: list[str]) -> str:
         if blurb is None:
             return f"help: {topic}: not found\r\n"
         return f"{topic.upper()}  {blurb}\r\n"
-    return help_text()
+    return help_text(ansi=sess.ansi_ok)
 
 
 def cmd_who(sess: Session, args: list[str]) -> str:
@@ -229,13 +230,29 @@ def cmd_who(sess: Session, args: list[str]) -> str:
 
 
 def cmd_motd(sess: Session, args: list[str]) -> str:
-    return motd_text()
+    return motd_text(ansi=sess.ansi_ok)
 
 
 def cmd_news(sess: Session, args: list[str]) -> str:
     if sess.host == "grayline" and not site.verb_enabled("news"):
         return "news: not found\r\n"
-    return news_text()
+    return news_text(ansi=sess.ansi_ok)
+
+
+def cmd_ansi(sess: Session, args: list[str]) -> str:
+    if sess.host != "grayline":
+        return "ansi: not found\r\n"
+    if not args:
+        state = "ON" if sess.ansi_ok else "OFF"
+        return f"ANSI {state}\r\n"
+    flag = args[0].lower()
+    if flag in {"on", "1", "yes", "true"}:
+        sess.ansi_ok = True
+        return "ANSI ON\r\n"
+    if flag in {"off", "0", "no", "false"}:
+        sess.ansi_ok = False
+        return "ANSI OFF\r\n"
+    return "usage: ANSI ON|OFF\r\n"
 
 
 def cmd_date(sess: Session, args: list[str]) -> str:
@@ -1086,7 +1103,7 @@ def cmd_bye(sess: Session, args: list[str]) -> str:
         return "already on grayline\r\n"
     text = pop_to_previous(sess)
     if sess.host == "grayline":
-        return return_to_pad(sess.user or "guest")
+        return return_to_pad(sess.user or "guest", ansi=sess.ansi_ok)
     return text
 
 
@@ -1313,7 +1330,7 @@ def cmd_connect(sess: Session, args: list[str]) -> str:
             sess.hops = ["grayline"]
             sess.baud_stack = [T1_BAUD]
             sess.baud_now = T1_BAUD
-        return return_to_pad(sess.user or "guest")
+        return return_to_pad(sess.user or "guest", ansi=sess.ansi_ok)
     known = {host.name: host for host in get_pack(sess.host).hosts}
     host = known.get(name)
     if host is None:
@@ -1599,7 +1616,7 @@ def cmd_logout(sess: Session, args: list[str]) -> str:
     _clear_group_draft(sess)
     sess.group_name = ""
     sess.group_art = 0
-    return banner() + login_prompt()
+    return banner(ansi=True) + login_prompt()
 
 
 COMMANDS: dict[str, Callable[[Session, list[str]], str]] = {
@@ -1614,6 +1631,7 @@ COMMANDS: dict[str, Callable[[Session, list[str]], str]] = {
     "date": cmd_date,
     "clear": cmd_clear,
     "clr": cmd_clear,
+    "ansi": cmd_ansi,
     "full": cmd_full,
     "status": cmd_status,
     "map": cmd_map,

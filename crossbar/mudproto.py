@@ -117,7 +117,7 @@ def _return_pad_text(sess: Session) -> str:
         sess.hops = ["grayline"]
         sess.baud_stack = [T1_BAUD]
         sess.baud_now = T1_BAUD
-    return return_to_pad(sess.user or "guest")
+    return return_to_pad(sess.user or "guest", ansi=sess.ansi_ok)
 
 
 async def hangup(sess: Session, *, announce: bool = True) -> str:

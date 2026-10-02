@@ -60,9 +60,9 @@ class CommandTests(unittest.TestCase):
         SESSIONS.clear()
 
     def test_banner_names_grayline_and_crossbar(self) -> None:
-        from crossbar.lobby import help_text, load_asc
+        from crossbar.lobby import help_text, load_asc, load_chrome
 
-        text = banner()
+        text = banner(ansi=False)
         self.assertEqual(text, load_asc("welcome") + "\r\n")
         self.assertIn("CONNECTED T1 // DTE 03 // NODE GL-01", text)
         self.assertIn("GRAYLINE.DEV X.25 PUBLIC DATA NETWORK", text)
@@ -73,13 +73,27 @@ class CommandTests(unittest.TestCase):
         self.assertNotIn("PiSecure", text)
         self.assertNotIn("pisecure", text.lower())
 
-        helped = help_text()
-        self.assertEqual(helped, load_asc("menu_header") + "\r\n" + load_asc("main_menu"))
+        helped = help_text(ansi=False)
+        self.assertEqual(
+            helped,
+            load_asc("menu_header") + "\r\n" + load_asc("main_menu"),
+        )
         self.assertIn("[MENU]", helped)
         self.assertIn("[Main]", helped)
         self.assertIn("[System]", helped)
         self.assertIn("HOSTS", helped)
         self.assertIn("PROFILE_CONFIG", helped)
+        color = help_text(ansi=True)
+        self.assertIn("\x1b[", color)
+        self.assertIn("\x1b[", load_chrome("welcome", ansi=True))
+        sess = get_session("sid-ansi")
+        sess.user = "guest"
+        sess.host = "grayline"
+        sess.phase = "shell"
+        self.assertIn("ANSI ON", push(sess, "ansi\r"))
+        sess.ansi_ok = True
+        self.assertIn("ANSI OFF", push(sess, "ansi off\r"))
+        self.assertFalse(sess.ansi_ok)
 
     def test_login_guest_register_and_reserved(self) -> None:
         from crossbar.accounts import authenticate, create_account, get_account

@@ -674,7 +674,10 @@ def hangup(sess: Session) -> str:
     if sess.host == "grayline":
         from crossbar.lobby import return_to_pad
 
-        return "NO CARRIER\r\n" + return_to_pad(sess.user or "guest")
+        return "NO CARRIER\r\n" + return_to_pad(
+            sess.user or "guest",
+            ansi=sess.ansi_ok,
+        )
     return "NO CARRIER\r\n"
 
 
