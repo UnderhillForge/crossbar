@@ -59,7 +59,7 @@ _HELP_TOPICS = {
     "motd": "message of the day",
     "news": "pad bulletin",
     "mail": "letters: list read send reply fwd del archive",
-    "groups": "forums: list group headers read post next",
+    "groups": "forums: list new headers read post next",
     "wall": "last 10 wall lines; write one line",
     "full": "baud, handle, destination",
     "status": "baud, handle, destination",
@@ -667,6 +667,7 @@ def _groups_help() -> str:
     return (
         "GROUPS                 list groups\r\n"
         "GROUPS LIST            same\r\n"
+        "GROUPS NEW             unread since you last read\r\n"
         "GROUPS <name>          select a group\r\n"
         "GROUPS HEADERS [n]     recent headers (default 20)\r\n"
         "GROUPS READ <n>        read article number\r\n"
@@ -736,6 +737,29 @@ def _groups_headers(sess: Session, limit: int | None) -> str:
                 f"{row.number:>4}  {_wall_when(row.date_sent)}  "
                 f"{row.from_handle:<12} {_groups_subject_shown(row.subject)}"
             )
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _groups_new(sess: Session) -> str:
+    from crossbar import groups
+
+    if not sess.user or sess.user == "guest" or get_account(sess.user) is None:
+        return "logon required\r\n"
+    rows = groups.unread_headers(sess.user)
+    lines = ["GROUPS NEW  (unread)"]
+    if not rows:
+        lines.append("(no new articles)")
+        return "\r\n".join(lines) + "\r\n"
+    current = ""
+    for group_name, row in rows:
+        if group_name != current:
+            current = group_name
+            lines.append(current)
+        lines.append(
+            f"{row.number:>4}  {_wall_when(row.date_sent)}  "
+            f"{row.from_handle:<12} {_groups_subject_shown(row.subject)}"
+        )
+    lines.append("GROUPS <name> then GROUPS READ <n>")
     return "\r\n".join(lines) + "\r\n"
 
 
@@ -882,6 +906,8 @@ def cmd_groups(sess: Session, args: list[str]) -> str:
     rest = args[1:]
     if verb in {"help", "?"}:
         return _groups_help()
+    if verb == "new":
+        return _groups_new(sess)
     if verb == "group" and rest:
         return _groups_select(sess, rest[0])
     if verb == "headers":
