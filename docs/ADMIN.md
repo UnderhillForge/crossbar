@@ -60,6 +60,8 @@ Mail broadcasts to pad accounts as From `sysop` (pad-local letters, not SMTP). A
 
 WALL posts live in `data/text/wall.asc` (not SQLite). `WALL <text>` appends one line; the pad shows the last 10. Edit or trim that file over SSH when needed. Line format: `<UTC ISO8601> <handle> <text>`.
 
+GROUPS are local forums in `grayline.db` (not `news.asc`). Seed groups: `grayline.general`, `grayline.doors`, `grayline.sysop`. Pad POST is for registered handles; `grayline.sysop` is read-only on the pad. Packet peering and NNTP uplink are not wired yet — see `docs/design-groups.md`.
+
 ## Not on :8080
 
 Do not add a link, a comment in the pad banner, or a `CONNECT admin` host. The public page is the terminal and nothing else.

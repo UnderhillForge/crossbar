@@ -85,6 +85,11 @@ class Session:
     mail_subject: str = ""
     mail_body_lines: list[str] = field(default_factory=list)
     mail_reply_to: int | None = None
+    # GROUPS reader cursor + compose draft.
+    group_name: str = ""
+    group_art: int = 0
+    group_subject: str = ""
+    group_body_lines: list[str] = field(default_factory=list)
 
 
 # sid -> Session. Process-local. Restart clears this dict.
@@ -144,6 +149,8 @@ def prompt_for(sess: Session) -> str:
         if sess.phase == "profile_ps1":
             return base + "PS1: "
         if sess.phase == "mail_subject":
+            return base + "Subject: "
+        if sess.phase == "group_subject":
             return base + "Subject: "
         return base
     return f"{sess.user}@{sess.host}> "

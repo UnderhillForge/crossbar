@@ -154,6 +154,11 @@ def push(sess: Session, data: str) -> str:
 
                     _clear_mail_draft(sess)
                     sess.phase = "shell"
+                elif sess.phase.startswith("group"):
+                    from crossbar.commands import _clear_group_draft
+
+                    _clear_group_draft(sess)
+                    sess.phase = "shell"
                 out.append("^C\r\n" + prompt_for(sess))
             continue
         if (
@@ -162,6 +167,7 @@ def push(sess: Session, data: str) -> str:
             and sess.host == "grayline"
             and not sess.phase.startswith("profile")
             and not sess.phase.startswith("mail")
+            and not sess.phase.startswith("group")
         ):
             from crossbar.lobby import pad_tab
 

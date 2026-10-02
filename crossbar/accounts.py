@@ -80,9 +80,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS accounts_wallet_unique ON accounts(wallet) WHERE wallet != ''"
     )
+    from crossbar import groups
     from crossbar import mail
 
     mail.ensure_schema(conn)
+    groups.ensure_schema(conn)
 
 
 def init_db() -> None:

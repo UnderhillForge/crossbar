@@ -44,6 +44,7 @@ _GRAYLINE_COMMANDS = frozenset(
         "motd",
         "news",
         "mail",
+        "groups",
         "wall",
         "full",
         "status",

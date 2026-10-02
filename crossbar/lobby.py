@@ -12,6 +12,7 @@ Terminal chrome under data/text/:
   news.asc          local NEWS bulletin (NNTP later)
   motd.asc          message of the day
   wall.asc          WALL posts (append via WALL <text>; edit over SSH)
+  (GROUPS are SQLite forums — not an .asc file; NEWS stays news.asc)
 """
 
 from __future__ import annotations
@@ -67,6 +68,8 @@ def pad_path_for(phase: str) -> str:
         return "profile"
     if phase.startswith("mail"):
         return "mail"
+    if phase.startswith("group"):
+        return "groups"
     return "main"
 
 
@@ -150,6 +153,7 @@ PAD_WORDS = (
     "motd",
     "news",
     "mail",
+    "groups",
     "wall",
     "full",
     "status",
