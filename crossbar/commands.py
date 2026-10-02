@@ -59,6 +59,7 @@ _HELP_TOPICS = {
     "motd": "message of the day",
     "news": "pad bulletin",
     "mail": "letters: list read send reply fwd del archive",
+    "groups": "forums: list group headers read post next",
     "wall": "last 10 wall lines; write one line",
     "full": "baud, handle, destination",
     "status": "baud, handle, destination",
@@ -657,6 +658,256 @@ def cmd_wall(sess: Session, args: list[str]) -> str:
     return "posted\r\n" + cmd_wall(sess, [])
 
 
+def _clear_group_draft(sess: Session) -> None:
+    sess.group_subject = ""
+    sess.group_body_lines = []
+
+
+def _groups_help() -> str:
+    return (
+        "GROUPS                 list groups\r\n"
+        "GROUPS LIST            same\r\n"
+        "GROUPS <name>          select a group\r\n"
+        "GROUPS HEADERS [n]     recent headers (default 20)\r\n"
+        "GROUPS READ <n>        read article number\r\n"
+        "GROUPS NEXT / PREV     move in current group\r\n"
+        "GROUPS POST [subject]  post to current group\r\n"
+        "GROUPS HELP\r\n"
+        "NEWS is the system bulletin; GROUPS are forums.\r\n"
+    )
+
+
+def _groups_subject_shown(subject: str) -> str:
+    text = (subject or "").strip()
+    return text if text else "(no subject)"
+
+
+def _groups_list(sess: Session) -> str:
+    from crossbar import groups
+
+    rows = groups.list_groups(for_handle=sess.user or "")
+    lines = ["GROUPS"]
+    if not rows:
+        lines.append("(none)")
+    else:
+        lines.append(f"{'name':<22} {'high':>4} {'new':>4}  description")
+        for row in rows:
+            unread = row.unread if sess.user and sess.user != "guest" else 0
+            lines.append(
+                f"{row.name:<22} {row.high:>4} {unread:>4}  {row.description}"
+            )
+    if sess.group_name:
+        lines.append(f"current: {sess.group_name}")
+    lines.append("GROUPS HELP for verbs")
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _groups_select(sess: Session, name: str) -> str:
+    from crossbar import groups
+
+    info = groups.get_group(name)
+    if info is None:
+        return "no such group\r\n"
+    sess.group_name = info.name
+    sess.group_art = info.high
+    return (
+        f"Group {info.name} ({info.description})\r\n"
+        f"articles: {info.high}  policy: {info.post_policy}\r\n"
+        "GROUPS HEADERS · GROUPS READ <n> · GROUPS POST\r\n"
+    )
+
+
+def _groups_headers(sess: Session, limit: int | None) -> str:
+    from crossbar import groups
+
+    if not sess.group_name:
+        return "no group selected\r\n"
+    cap = groups.HEADERS_DEFAULT if limit is None else limit
+    try:
+        rows = groups.headers(sess.group_name, limit=cap)
+    except ValueError as exc:
+        return f"{exc}\r\n"
+    lines = [f"{sess.group_name}  headers (newest first)"]
+    if not rows:
+        lines.append("(empty)")
+    else:
+        for row in reversed(rows):
+            lines.append(
+                f"{row.number:>4}  {_wall_when(row.date_sent)}  "
+                f"{row.from_handle:<12} {_groups_subject_shown(row.subject)}"
+            )
+    return "\r\n".join(lines) + "\r\n"
+
+
+def _groups_show_article(sess: Session, article) -> str:
+    from crossbar import groups
+
+    sess.group_art = article.number
+    if sess.user and sess.user != "guest":
+        groups.mark_read(sess.user, article.group_name, article.number)
+    body = article.body.replace("\n", "\r\n")
+    return (
+        f"Article {article.number} in {article.group_name}\r\n"
+        f"From: {article.from_handle}\r\n"
+        f"Date: {_wall_when(article.date_sent)}\r\n"
+        f"Subj: {_groups_subject_shown(article.subject)}\r\n"
+        f"Message-ID: {article.message_id}\r\n"
+        "────────────────────────────────────────\r\n"
+        f"{body}\r\n"
+    )
+
+
+def _groups_read(sess: Session, number: int) -> str:
+    from crossbar import groups
+
+    if not sess.group_name:
+        return "no group selected\r\n"
+    article = groups.get_article(sess.group_name, number)
+    if article is None:
+        return "no such article\r\n"
+    return _groups_show_article(sess, article)
+
+
+def _groups_next_prev(sess: Session, direction: str) -> str:
+    from crossbar import groups
+
+    if not sess.group_name:
+        return "no group selected\r\n"
+    if direction == "next":
+        article = groups.next_article(sess.group_name, sess.group_art)
+        if article is None and sess.group_art == 0:
+            article = groups.next_article(sess.group_name, 0)
+    else:
+        article = groups.prev_article(sess.group_name, sess.group_art or 10**9)
+    if article is None:
+        return "no more articles\r\n"
+    return _groups_show_article(sess, article)
+
+
+def _groups_begin_post(sess: Session, subject: str | None) -> str:
+    from crossbar import groups
+
+    if not sess.group_name:
+        return "no group selected\r\n"
+    info = groups.get_group(sess.group_name)
+    if info is None:
+        return "no such group\r\n"
+    if not sess.user or sess.user == "guest" or get_account(sess.user) is None:
+        return "logon required\r\n"
+    if info.post_policy == "sysop":
+        return "sysop only\r\n"
+    if info.post_policy == "readonly":
+        return "read only\r\n"
+    sess.group_body_lines = []
+    if subject is None:
+        sess.group_subject = ""
+        sess.phase = "group_subject"
+        return ""
+    sess.group_subject = subject
+    sess.phase = "group_body"
+    return (
+        f"Compose to {sess.group_name}. "
+        "End with . on a line by itself. Q alone cancels.\r\n"
+    )
+
+
+def _groups_finish_post(sess: Session) -> str:
+    from crossbar import groups
+
+    body = "\n".join(sess.group_body_lines)
+    subject = sess.group_subject
+    group = sess.group_name
+    try:
+        number = groups.post(
+            group=group,
+            from_handle=sess.user or "",
+            subject=subject,
+            body=body,
+        )
+    except ValueError as exc:
+        return f"{exc}\r\n"
+    finally:
+        _clear_group_draft(sess)
+        sess.phase = "shell"
+    sess.group_art = number
+    if sess.user and sess.user != "guest":
+        groups.mark_read(sess.user, group, number)
+    return f"posted {number} to {group}\r\n"
+
+
+def group_line(sess: Session, raw: str) -> str:
+    text = raw
+    if sess.phase == "group_subject":
+        stripped = text.strip()
+        if stripped.upper() == "Q":
+            _clear_group_draft(sess)
+            sess.phase = "shell"
+            return "cancelled\r\n"
+        sess.group_subject = stripped
+        sess.phase = "group_body"
+        return (
+            f"Compose to {sess.group_name}. "
+            "End with . on a line by itself. Q alone cancels.\r\n"
+        )
+    if sess.phase == "group_body":
+        stripped = text.strip()
+        if stripped.upper() == "Q" and not sess.group_body_lines:
+            _clear_group_draft(sess)
+            sess.phase = "shell"
+            return "cancelled\r\n"
+        if stripped == ".":
+            return _groups_finish_post(sess)
+        if stripped.upper() == "Q":
+            _clear_group_draft(sess)
+            sess.phase = "shell"
+            return "cancelled\r\n"
+        from crossbar import groups as groups_mod
+
+        tentative = sess.group_body_lines + [text.rstrip("\r\n")]
+        if len(tentative) > groups_mod.BODY_MAX_LINES:
+            return "body too long\r\n"
+        if sum(len(line) + 1 for line in tentative) > groups_mod.BODY_MAX_CHARS:
+            return "body too long\r\n"
+        sess.group_body_lines.append(text.rstrip("\r\n"))
+        return ""
+    return ""
+
+
+def cmd_groups(sess: Session, args: list[str]) -> str:
+    if sess.host != "grayline":
+        return "groups: not found\r\n"
+    if not args or args[0].lower() in {"list", "ls"}:
+        return _groups_list(sess)
+    verb = args[0].lower()
+    rest = args[1:]
+    if verb in {"help", "?"}:
+        return _groups_help()
+    if verb == "group" and rest:
+        return _groups_select(sess, rest[0])
+    if verb == "headers":
+        limit = None
+        if rest:
+            if not rest[0].isdigit():
+                return "usage: GROUPS HEADERS [n]\r\n"
+            limit = int(rest[0])
+        return _groups_headers(sess, limit)
+    if verb == "read":
+        if not rest or not rest[0].isdigit():
+            return "usage: GROUPS READ <n>\r\n"
+        return _groups_read(sess, int(rest[0]))
+    if verb == "next":
+        return _groups_next_prev(sess, "next")
+    if verb in {"prev", "previous"}:
+        return _groups_next_prev(sess, "prev")
+    if verb == "post":
+        subject = " ".join(rest) if rest else None
+        return _groups_begin_post(sess, subject)
+    # GROUPS grayline.general
+    if "." in verb or verb.startswith("grayline"):
+        return _groups_select(sess, args[0])
+    return "usage: GROUPS HELP\r\n"
+
+
 def cmd_verify(sess: Session, args: list[str]) -> str:
     return "verification is dark\r\n"
 
@@ -1214,6 +1465,9 @@ def cmd_logout(sess: Session, args: list[str]) -> str:
     sess.seen_look = False
     sess.login_at = 0.0
     _clear_mail_draft(sess)
+    _clear_group_draft(sess)
+    sess.group_name = ""
+    sess.group_art = 0
     return banner() + login_prompt()
 
 
@@ -1224,6 +1478,7 @@ COMMANDS: dict[str, Callable[[Session, list[str]], str]] = {
     "motd": cmd_motd,
     "news": cmd_news,
     "mail": cmd_mail,
+    "groups": cmd_groups,
     "wall": cmd_wall,
     "date": cmd_date,
     "clear": cmd_clear,
@@ -1266,6 +1521,9 @@ def submit(sess: Session) -> str:
         return login_line(sess, text)
     if sess.host == "grayline" and sess.phase.startswith("mail"):
         body = mail_line(sess, text)
+        return body + prompt_for(sess)
+    if sess.host == "grayline" and sess.phase.startswith("group"):
+        body = group_line(sess, text)
         return body + prompt_for(sess)
     if sess.host == "grayline" and sess.phase.startswith("profile"):
         body = profile_line(sess, text)
