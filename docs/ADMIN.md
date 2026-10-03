@@ -52,6 +52,8 @@ MOTD and the pad `?` text can be overridden in the same file. Pack text stays re
 
 Pad chrome under `data/text/`: prefer `name.ans` when the session has ANSI on and the file exists; otherwise `name.asc`. Covers welcome, menu_header, main_menu, motd, news. The pad prompt stays `prompt.asc`. `.ans` may be CP437 with a SAUCE footer (stripped on load). Players toggle with `ANSI ON` / `ANSI OFF` (default ON for the web terminal).
 
+**Saving `.ans` art:** the file must contain a real ESC byte (`0x1B`), not the two characters `^[` that some editors display. Export from Moebius / PabloDraw / etc., or convert caret notation with `data.replace(b"^[", b"\\x1b")` only when every CSI sequence is complete (not truncated mid-code by an 80-column paste). Do not wrap a whole `.ans` in a single `\x1b[1;36m` — that forces one color over the artist’s codes.
+
 Granting a flag requires a reason and writes an audit line. Revoke removes the local stamp. The trigger text comes from `packs/big-evil/flags.yaml`.
 
 Audit is `data/admin-audit.log`, append-only. The console can filter it. It cannot edit it.

@@ -49,13 +49,28 @@ def _strip_sauce(data: bytes) -> bytes:
     return data
 
 
+def _normalize_ans_escapes(data: bytes) -> bytes:
+    """Turn caret-bracket ESC (``^[``) into real ESC bytes.
+
+    Some editors paste/show ESC as two characters ^[. Those are not CSI and the
+    pad then ignores the color codes (or shows them as text).
+    """
+    if b"^[" not in data:
+        return data
+    # Only replace when it introduces a CSI/OSC-looking sequence.
+    return data.replace(b"^[", b"\x1b")
+
+
 def _decode_chrome(data: bytes, *, ans: bool) -> str:
     """Decode chrome bytes.
 
     Prefer UTF-8 when valid (Unicode block art + SGR). Classic DOS .ans that is
-    not valid UTF-8 falls back to CP437.
+    not valid UTF-8 falls back to CP437. Literal ``^[`` ESC notation is
+    normalized for .ans files.
     """
     data = _strip_sauce(data)
+    if ans:
+        data = _normalize_ans_escapes(data)
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
